@@ -15,7 +15,7 @@ match {
     // Ignore ; ... comments
 	r";[^\n\r]*" => {},
 	// Collapse newline + whitespace into a single newline
-	r"\n\s*" => NEWLINE,
+	r"[\n\r]\s*" => NEWLINE,
 
 	r"," => COMMA,
 	r"\[" => OPEN_SQUARE_BRACKET,
