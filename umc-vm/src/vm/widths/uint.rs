@@ -104,7 +104,7 @@ where
             Self::Arbitrary(_) => {
                 // TODO: Only need references
                 let v1: ArbitraryUnsignedInt = read_uint(p1, state).unwrap_or_default();
-                let v2: ArbitraryUnsignedInt = read_uint(p1, state).unwrap_or_default();
+                let v2: ArbitraryUnsignedInt = read_uint(p2, state).unwrap_or_default();
 
                 v1.partial_cmp(&v2)
             }
@@ -232,7 +232,7 @@ where
         match self {
             Self::U1 => {
                 let mut v1: bool = read_uint(p1, state).unwrap_or_default();
-                let v2: bool = read_uint(p1, state).unwrap_or_default();
+                let v2: bool = read_uint(p2, state).unwrap_or_default();
                 operation.operate(&mut v1, &v2);
                 state.store_prim(dst, v1);
             }

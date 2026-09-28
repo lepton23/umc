@@ -462,3 +462,37 @@ fn test_store_mem_addr() {
     assert_eq!(u1_0, false, "m:0 != m:1");
     assert_eq!(u1_1, true, "m:1 == m:2");
 }
+
+#[test]
+fn u1_bin_op_reads_p1_twice() {
+    const PROG: &str = "
+        mov u1:1, #1
+        mov u1:2, #0
+
+        and u1:0, u1:1, u1:2
+
+        dbg u1:0
+    ";
+
+    let vm = compile_and_run(PROG);
+    let u1_0 = vm.inspect_bool(0);
+
+    assert_eq!(u1_0, false, "1 AND 0 == 0");
+}
+
+#[test]
+fn arbitrary_width_cmp_reads_p1_twice() {
+    const PROG: &str = "
+        mov u65:1, #3
+        mov u65:2, #1
+
+        sgt u1:0, u65:1, u65:2
+
+        dbg u1:0
+    ";
+
+    let vm = compile_and_run(PROG);
+    let u1_0 = vm.inspect_bool(0);
+
+    assert_eq!(u1_0, true, "3 > 1");
+}
