@@ -11,7 +11,16 @@ mod jit;
 mod lower;
 
 use crate::vm::{RegState, SafeAddress};
+
+use crate::vm::compiler::{
+    emit::EmitError,
+    exec_mem::{ExecMemError, ExecPage},
+    frame::FrameLayout,
+};
+
 use umc_model::instructions::Instruction;
+
+use std::ops::Range;
 
 // block could not be compiled, entry index is blacklisted and interpreted for rest of program
 #[derive(Debug, PartialEq)]
@@ -46,6 +55,9 @@ pub struct CompiledRequest {
     pub block: CompiledBlock,
     pub stats: CompiledStats, // umc instructions, code bytes, frame slots, live in, dirty etc
 }
+
+/// STUB DEFINITION
+pub struct CompiledStats {}
 
 pub trait Compiler {
     // compile basic block starting at 'entry_pc'
