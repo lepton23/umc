@@ -2,7 +2,9 @@ mod memory;
 mod state;
 mod types;
 
+#[cfg(feature = "jit")]
 mod compiler;
+
 mod environment;
 mod helper;
 mod widths;
