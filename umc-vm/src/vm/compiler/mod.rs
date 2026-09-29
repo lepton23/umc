@@ -23,7 +23,7 @@ use umc_model::instructions::Instruction;
 use std::ops::Range;
 
 // block could not be compiled, entry index is blacklisted and interpreted for rest of program
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum CompileError {
     Unsupported { pc: usize, reason: &'static str },
     EmptyBlock { pc: usize },

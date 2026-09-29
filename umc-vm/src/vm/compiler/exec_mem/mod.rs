@@ -1,14 +1,27 @@
+use core::ffi::c_void;
+use core::ptr::NonNull;
+
 #[cfg(unix)]
 mod posix;
 
 #[cfg(windows)]
 mod win;
 
-/// STUB DEFINITION
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum ExecMemError {
-    BadPage { addr: usize },
+    Alloc(std::io::Error),
+    Protect(std::io::Error),
+    Flush(std::io::Error),
+    ZeroLength,
 }
 
-/// STUB DEFINITION
-pub struct ExecPage {}
+pub struct ExecPage {
+    ptr: NonNull<c_void>,
+    len: usize,
+}
+
+impl ExecPage {
+    pub fn allocate() {
+        todo!();
+    }
+}
