@@ -4,6 +4,7 @@
 mod block;
 mod bridge;
 mod emit;
+#[cfg(feature = "jit")]
 mod exec_mem;
 mod frame;
 #[cfg(feature = "jit")]

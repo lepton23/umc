@@ -81,7 +81,7 @@ pub(super) unsafe fn flush_icache(ptr: NonNull<c_void>, len: usize) -> Result<()
 
 /// free target memory
 /// return boolean as failures inside Drop can't be returned so result type is not necessary
-pub(super) unsafe fn free(ptr: NonNull<c_void>) -> bool {
+pub(super) unsafe fn free(ptr: NonNull<c_void>, _len: usize) -> bool {
     if unsafe { VirtualFree(ptr.as_ptr(), 0, MEM_RELEASE) } == 0 {
         return false;
     }
@@ -105,7 +105,7 @@ mod tests {
             let bytes = p.as_ptr() as *mut u8;
             bytes.write(0xAB);
             assert_eq!(bytes.read(), 0xAB);
-            assert!(free(p));
+            assert!(free(p, 0));
         }
     }
 
@@ -125,7 +125,7 @@ mod tests {
             let f: extern "C" fn() -> i32 = core::mem::transmute(p.as_ptr());
             assert_eq!(f(), 42);
 
-            assert!(free(p));
+            assert!(free(p, 0));
         }
     }
 }
