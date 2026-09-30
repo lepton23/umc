@@ -65,3 +65,47 @@ impl Drop for ExecPage {
         debug_assert!(freed, "failed to free exec page");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_code_is_rejected() {
+        assert!(matches!(
+            ExecPage::commit(&[]),
+            Err(ExecMemError::ZeroLength)
+        ));
+    }
+
+    // commit tiny block and call through with CompiledFn struct
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn commit_and_call_returns_value() {
+        // mov eax, 7 ; ret
+        const CODE: [u8; 6] = [0xB8, 0x07, 0x00, 0x00, 0x00, 0xC3];
+
+        let page = ExecPage::commit(&CODE).expect("commit failed");
+        assert_eq!(page.len(), PAGE_SIZE);
+
+        let mut frame = 0u64; // dummy frame
+        let result = unsafe { page.as_fn()(&mut frame) };
+        assert_eq!(result, 7);
+    }
+
+    // commit and drop pages in loop -- mem in task manager should stay flat if Drop works correclty
+    // run with: cargo test commit_drop_does_not_leak -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn commit_drop_does_not_leak() {
+        const CODE: [u8; 6] = [0xB8, 0x07, 0x00, 0x00, 0x00, 0xC3];
+
+        for i in 0..100_000 {
+            let page = ExecPage::commit(&CODE).expect("commit failed");
+            drop(page);
+            if i % 1_000 == 0 {
+                println!("iteration {i}");
+            }
+        }
+    }
+}
