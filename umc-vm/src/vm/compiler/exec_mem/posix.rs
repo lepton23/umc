@@ -47,7 +47,7 @@ pub(super) unsafe fn flush_icache(_ptr: NonNull<c_void>, _len: usize) -> Result<
 }
 
 pub(super) unsafe fn free(ptr: NonNull<c_void>, len: usize) -> bool {
-    unsafe { libc::munmap(ptr.as_ptr(), len as size_t) == 0 }
+    unsafe { libc::munmap(ptr.as_ptr(), len) == 0 }
 }
 
 #[cfg(test)]
