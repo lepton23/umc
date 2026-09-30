@@ -23,5 +23,6 @@ libc = { version = "0.2", optional = true }
 [features]
 default = ["jit"]
 jit = ["dep:libc"]
+jit-disasm = ["jit", "dep:iced-x86"]
 
 

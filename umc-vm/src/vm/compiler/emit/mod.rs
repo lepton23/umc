@@ -1,8 +1,93 @@
 mod encode;
 mod x86_64;
 
-/// STUB DEFINITION
+use crate::vm::RegWidth;
+use crate::vm::compiler::{FrameLayout, FrameSlot};
+
+#[cfg(target_arch = "x86_64")]
+pub type NativeEmitter = x86_64::X86Emitter;
+
+pub enum Tmp {
+    T0,
+    T1,
+    T2,
+}
+pub enum OpWidth {
+    W32,
+    W64,
+}
+pub enum Src {
+    Tmp(Tmp),
+    Imm(u64),
+}
+pub enum AluOp {
+    Add,
+    Sub,
+    Mul,
+    And,
+    Or,
+    Xor,
+}
+pub enum UnOp {
+    Mov,
+    Not,
+}
+pub enum CmpCond {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+pub enum Signedness {
+    Unsigned,
+    Signed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Label(pub u32);
+
 #[derive(Debug, PartialEq)]
 pub enum EmitError {
-    BadEmit { pc: usize },
+    Unencodable { what: &'static str, value: u64 },
+    UnboundLabel(Label),
+    RebindLabel(Label),
+}
+
+pub trait Emitter: Sized {
+    const ARCH: &'static str;
+    fn new() -> Self;
+
+    fn new_label(&mut self) -> Label;
+    fn bind(&mut self, l: Label);
+
+    /// ABI aware methods
+    fn prologue(&mut self, layout: &FrameLayout);
+    fn ret_exit(&mut self, exit_id: u32);
+
+    fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth);
+    fn store_slot(&mut self, slot: FrameSlot, src: Tmp, w: OpWidth);
+    fn mov_imm(&mut self, dst: Tmp, imm: u64, w: OpWidth);
+
+    fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth);
+    fn unop(&mut self, op: UnOp, dst: Tmp, src: Src, w: OpWidth);
+
+    /// UMC wrap at declared width - noop when bits already natural for withd
+    fn truncate_unsigned(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth);
+    fn sign_extend(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth);
+
+    fn set_cmp(&mut self, dst: Tmp, cond: CmpCond, lhs: Tmp, rhs: Src, w: OpWidth, s: Signedness);
+    fn branch_cmp(
+        &mut self,
+        cond: CmpCond,
+        lhs: Tmp,
+        rhs: Src,
+        w: OpWidth,
+        s: Signedness,
+        target: Label,
+    );
+    fn jump(&mut self, target: Label);
+
+    fn finish(self) -> Result<Vec<u8>, EmitError>;
 }

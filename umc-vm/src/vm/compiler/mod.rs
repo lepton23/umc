@@ -16,7 +16,7 @@ use crate::vm::{RegState, SafeAddress};
 use crate::vm::compiler::{
     emit::EmitError,
     exec_mem::{ExecMemError, ExecPage},
-    frame::FrameLayout,
+    frame::{FrameLayout, FrameSlot},
 };
 
 use umc_model::instructions::Instruction;

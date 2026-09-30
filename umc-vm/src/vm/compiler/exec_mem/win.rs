@@ -70,7 +70,7 @@ pub(super) unsafe fn protect_rx(ptr: NonNull<c_void>, len: usize) -> Result<(), 
 }
 
 /// flush icache
-pub(super) unsafe fn flush_icache(ptr: NonNull<c_void>, len: usize) -> Result<(), ExecMemError> {
+pub(super) unsafe fn flush_icache(ptr: NonNull<c_void>, _len: usize) -> Result<(), ExecMemError> {
     let h_process = unsafe { GetCurrentProcess() };
 
     if unsafe { FlushInstructionCache(h_process, ptr.as_ptr(), 0) } == 0 {
