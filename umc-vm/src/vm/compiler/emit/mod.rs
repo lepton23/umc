@@ -1,4 +1,3 @@
-mod encode;
 mod x86_64;
 
 use crate::vm::RegWidth;
@@ -7,11 +6,13 @@ use crate::vm::compiler::{FrameLayout, FrameSlot};
 #[cfg(target_arch = "x86_64")]
 pub type NativeEmitter = x86_64::X86Emitter;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tmp {
     T0,
     T1,
     T2,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpWidth {
     W32,
     W64,
@@ -20,6 +21,7 @@ pub enum Src {
     Tmp(Tmp),
     Imm(u64),
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AluOp {
     Add,
     Sub,
@@ -28,10 +30,12 @@ pub enum AluOp {
     Or,
     Xor,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
     Mov,
     Not,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmpCond {
     Eq,
     Ne,
@@ -40,6 +44,7 @@ pub enum CmpCond {
     Gt,
     Ge,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signedness {
     Unsigned,
     Signed,
@@ -53,6 +58,7 @@ pub enum EmitError {
     Unencodable { what: &'static str, value: u64 },
     UnboundLabel(Label),
     RebindLabel(Label),
+    Asm(String), // for Iced errors that don't map easily
 }
 
 pub trait Emitter: Sized {

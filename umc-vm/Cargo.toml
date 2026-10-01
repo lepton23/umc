@@ -15,14 +15,13 @@ awint = {version = "0.18.1" }
 clap = { version = "4.5.55", features = ["derive"]}
 rustc-hash = "2.1.1"
 int-enum = "1.2.0"
-iced-x86 = { version = "1.21", optional = true, default-features = false, features = ["std", "decoder", "gas"] }
+iced-x86 = { version = "1.21", optional = true, default-features = false, features = ["std", "block_encoder", "decoder", "gas", "code_asm"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
 
 [features]
 default = ["jit"]
-jit = ["dep:libc"]
-jit-disasm = ["jit", "dep:iced-x86"]
+jit = ["dep:libc", "dep:iced-x86"]
 
 
