@@ -17,6 +17,7 @@ pub enum OpWidth {
     W32,
     W64,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Src {
     Tmp(Tmp),
     Imm(u64),
@@ -74,7 +75,11 @@ pub trait Emitter: Sized {
 
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth);
     fn store_slot(&mut self, slot: FrameSlot, src: Tmp, w: OpWidth);
+
     fn mov_imm(&mut self, dst: Tmp, imm: u64, w: OpWidth);
+    fn mov_rr(&mut self, dst: Tmp, src: Tmp, w: OpWidth);
+    fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth);
+    fn neg(&mut self, dst: Tmp, w: OpWidth);
 
     fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth);
     fn unop(&mut self, op: UnOp, dst: Tmp, src: Src, w: OpWidth);
