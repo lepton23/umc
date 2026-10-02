@@ -271,10 +271,46 @@ impl Emitter for X86Emitter {
 
     /// UMC wrap at declared width - noop when bits already natural for withd
     fn truncate_unsigned(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth) {
-        todo!()
+        let r = match w {
+            OpWidth::W64 => {
+                debug_assert!(bits <= 64);
+                if bits > 64 {
+                    return;
+                }
+                if bits == 64 || bits == 0 {
+                    self.asm.nop()
+                } else {
+                    self.asm.shl(r64(dst), 64 - bits);
+                    self.asm.shr(r64(dst), 64 - bits)
+                }
+            }
+            OpWidth::W32 => {
+                debug_assert!(bits <= 32);
+                if bits > 32 {
+                    return;
+                }
+                if bits == 32 || bits == 0 {
+                    self.asm.nop()
+                } else {
+                    self.asm.shl(r32(dst), 32 - bits);
+                    self.asm.shr(r32(dst), 32 - bits)
+                }
+            }
+        };
+        record(&mut self.error, r);
     }
     fn sign_extend(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth) {
-        todo!()
+        let r = match w {
+            OpWidth::W64 => {
+                self.asm.shl(r64(dst), 64 - bits);
+                self.asm.sar(r64(dst), 64 - bits)
+            }
+            OpWidth::W32 => {
+                self.asm.shl(r32(dst), 32 - bits);
+                self.asm.sar(r32(dst), 32 - bits)
+            }
+        };
+        record(&mut self.error, r);
     }
 
     fn set_cmp(&mut self, dst: Tmp, cond: CmpCond, lhs: Tmp, rhs: Src, w: OpWidth, s: Signedness) {
