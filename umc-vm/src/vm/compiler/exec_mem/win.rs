@@ -59,8 +59,6 @@ pub(super) fn alloc_rw(len: usize) -> Result<NonNull<c_void>, ExecMemError> {
     NonNull::new(p).ok_or_else(|| ExecMemError::Alloc(io::Error::last_os_error()))
 }
 
-/// # Safety
-/// `ptr..ptr+len` must lie inside region returned by `alloc_rw` that hasnt been freed
 pub(super) unsafe fn protect_rx(ptr: NonNull<c_void>, len: usize) -> Result<(), ExecMemError> {
     let mut old = 0u32; // passing null for lpflOldProtect makes call fail
     if unsafe { VirtualProtect(ptr.as_ptr(), len, PAGE_EXECUTE_READ, &mut old) } == 0 {

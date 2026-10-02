@@ -78,6 +78,28 @@ fn record(slot: &mut Option<EmitError>, r: Result<(), IcedError>) {
     }
 }
 
+impl X86Emitter {
+    fn cmp_flags(&mut self, lhs: Tmp, rhs: Src, w: OpWidth) -> Result<(), IcedError> {
+        match rhs {
+            Src::Tmp(s) => match w {
+                OpWidth::W64 => self.asm.cmp(r64(lhs), r64(s)),
+                OpWidth::W32 => self.asm.cmp(r32(lhs), r32(s)),
+            },
+            Src::Imm(i) => match w {
+                // avoid truncation by copying to scratch register if needed
+                OpWidth::W64 => match i32::try_from(i as i64) {
+                    Ok(j) => self.asm.cmp(r64(lhs), j),
+                    Err(_) => {
+                        self.asm.mov(SCRATCH64, i)?;
+                        self.asm.cmp(r64(lhs), SCRATCH64)
+                    }
+                },
+                OpWidth::W32 => self.asm.cmp(r32(lhs), i as i32),
+            },
+        }
+    }
+}
+
 impl Emitter for X86Emitter {
     const ARCH: &'static str = "x86_64";
     fn new() -> Self {
@@ -111,13 +133,13 @@ impl Emitter for X86Emitter {
     /// ABI aware methods
     fn prologue(&mut self, _layout: &FrameLayout) {
         /// # Layout will be used to save pinned registers
-        self.asm.push(FRAME_BASE);
-        self.asm.mov(FRAME_BASE, ARG);
+        let _ = self.asm.push(FRAME_BASE);
+        let _ = self.asm.mov(FRAME_BASE, ARG);
     }
     fn ret_exit(&mut self, exit_id: u32) {
-        self.asm.mov(eax, exit_id); // CompiledFn returns u32 so mov into eax for same result ith short form
-        self.asm.pop(FRAME_BASE);
-        self.asm.ret();
+        let _ = self.asm.mov(eax, exit_id); // CompiledFn returns u32 so mov into eax for same result ith short form
+        let _ = self.asm.pop(FRAME_BASE);
+        let _ = self.asm.ret();
     }
 
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth) {
@@ -144,7 +166,7 @@ impl Emitter for X86Emitter {
                 if let Ok(u) = u32::try_from(imm) {
                     self.asm.mov(r32(dst), u) // if can be directly converted from u32 do it
                 } else if let Ok(s) = i32::try_from(imm as i64) {
-                    self.asm.mov(r32(dst), s) // if not, convert from signed to i32
+                    self.asm.mov(r32(dst), s) // if not, sign-extended imm32 into 32 bit reg
                 } else {
                     self.asm.mov(r64(dst), imm) // or stick to 64 bit reg
                 }
@@ -256,7 +278,28 @@ impl Emitter for X86Emitter {
     }
 
     fn set_cmp(&mut self, dst: Tmp, cond: CmpCond, lhs: Tmp, rhs: Src, w: OpWidth, s: Signedness) {
-        todo!()
+        let r = self.cmp_flags(lhs, rhs, w);
+        record(&mut self.error, r);
+
+        let a = &mut self.asm;
+        let d = r8(dst);
+
+        use CmpCond::*;
+        use Signedness::*;
+        let r = match (cond, s) {
+            (Eq, _) => a.sete(d),
+            (Ne, _) => a.setne(d),
+            (Lt, Signed) => a.setl(d),
+            (Lt, Unsigned) => a.setb(d),
+            (Le, Signed) => a.setle(d),
+            (Le, Unsigned) => a.setbe(d),
+            (Gt, Signed) => a.setg(d),
+            (Gt, Unsigned) => a.seta(d),
+            (Ge, Signed) => a.setge(d),
+            (Ge, Unsigned) => a.setae(d),
+        };
+        record(&mut self.error, r);
+        record(&mut self.error, a.movzx(r32(dst), d));
     }
     fn branch_cmp(
         &mut self,
@@ -267,10 +310,38 @@ impl Emitter for X86Emitter {
         s: Signedness,
         target: Label,
     ) {
-        todo!()
+        let r = self.cmp_flags(lhs, rhs, w);
+        record(&mut self.error, r);
+
+        let st = &mut self.labels[target.0 as usize];
+        st.referenced = true;
+        let l = st.iced;
+
+        let a = &mut self.asm;
+
+        use CmpCond::*;
+        use Signedness::*;
+        let r = match (cond, s) {
+            (Eq, _) => a.je(l),
+            (Ne, _) => a.jne(l),
+            (Lt, Signed) => a.jl(l),
+            (Lt, Unsigned) => a.jb(l),
+            (Le, Signed) => a.jle(l),
+            (Le, Unsigned) => a.jbe(l),
+            (Gt, Signed) => a.jg(l),
+            (Gt, Unsigned) => a.ja(l),
+            (Ge, Signed) => a.jge(l),
+            (Ge, Unsigned) => a.jae(l),
+        };
+        record(&mut self.error, r);
     }
     fn jump(&mut self, target: Label) {
-        todo!()
+        let st = &mut self.labels[target.0 as usize];
+        st.referenced = true;
+        let l = st.iced;
+
+        let r = self.asm.jmp(l);
+        record(&mut self.error, r);
     }
 
     fn finish(mut self) -> Result<Vec<u8>, EmitError> {
