@@ -1,6 +1,6 @@
 use crate::vm::compiler::emit::*;
 
-use iced_x86::{Code, Instruction, code_asm::*};
+use iced_x86::{Code, Instruction, Register, code_asm::*};
 
 const FRAME_BASE: AsmRegister64 = rbx;
 const SCRATCH64: AsmRegister64 = r11;
@@ -167,8 +167,9 @@ impl Emitter for X86Emitter {
                 if let Ok(u) = u32::try_from(imm) {
                     self.asm.mov(r32(dst), u) // if can be directly converted from u32 do it
                 } else if let Ok(s) = i32::try_from(imm as i64) {
-                    self.asm
-                        .add_instruction(Instruction::with2(Code::Mov_rm64_imm32, r64(dst), s)?) // if not, sign-extended imm32 into 64 bit reg
+                    // if not, sign-extended imm32 into 64 bit reg
+                    Instruction::with2(Code::Mov_rm64_imm32, Register::from(r64(dst)), s)
+                        .and_then(|i| self.asm.add_instruction(i))
                 } else {
                     self.asm.mov(r64(dst), imm) // or stick to 64 bit reg directly
                 }
@@ -261,7 +262,7 @@ impl Emitter for X86Emitter {
                 record(&mut self.error, r);
             }
             (UnOp::Not, Src::Imm(i)) => {
-                // fold at compile time
+                // figured out at compile time
                 let nw = match w {
                     OpWidth::W32 => !i & 0xFFFF_FFFF,
                     OpWidth::W64 => !i,
@@ -513,5 +514,152 @@ mod tests {
         record(&mut e.error, e.asm.ret());
         let text = disasm(&e.finish().unwrap());
         assert_eq!(text, ["push %rbx", "mov %rcx,%rbx", "ret"])
+    }
+
+    #[test]
+    fn mov_imm_picks_shortest_encoding() {
+        let mut e = X86Emitter::new();
+        e.mov_imm(Tmp::T0, 7, OpWidth::W64); // fits u32 -> zero-extending 32 bit mov
+        e.mov_imm(Tmp::T1, u64::MAX, OpWidth::W64); // -1 -> sign-extended imm32
+        e.mov_imm(Tmp::T2, 0x1_0000_0000, OpWidth::W64); // needs full imm64
+        let bytes = e.finish().unwrap();
+        assert_eq!(
+            disasm(&bytes),
+            [
+                "mov $7,%eax",
+                "mov $0xFFFFFFFFFFFFFFFF,%rcx",
+                "movabs $0x100000000,%rdx"
+            ]
+        );
+        // 5 + 7 + 10 bytes
+        assert_eq!(bytes.len(), 22);
+    }
+
+    #[test]
+    fn alu_sub_with_dst_aliasing_rhs_negates_first() {
+        let mut e = X86Emitter::new();
+        // T0 = T1 - T0
+        e.alu(
+            AluOp::Sub,
+            Tmp::T0,
+            Tmp::T1,
+            Src::Tmp(Tmp::T0),
+            OpWidth::W64,
+        );
+        assert_eq!(disasm(&e.finish().unwrap()), ["neg %rax", "add %rcx,%rax"]);
+    }
+
+    #[test]
+    fn alu_wide_imm_goes_through_scratch() {
+        let mut e = X86Emitter::new();
+        e.alu(
+            AluOp::Add,
+            Tmp::T0,
+            Tmp::T1,
+            Src::Imm(0x1_0000_0000),
+            OpWidth::W64,
+        );
+        assert_eq!(
+            disasm(&e.finish().unwrap()),
+            ["mov %rcx,%rax", "movabs $0x100000000,%r11", "add %r11,%rax"]
+        );
+    }
+
+    #[test]
+    fn not_of_imm_is_folded() {
+        let mut e = X86Emitter::new();
+        e.unop(UnOp::Not, Tmp::T0, Src::Imm(0xF0), OpWidth::W32);
+        assert_eq!(disasm(&e.finish().unwrap()), ["mov $0xFFFFFF0F,%eax"]);
+    }
+
+    #[test]
+    fn truncate_and_sign_extend_use_shift_pairs() {
+        let mut e = X86Emitter::new();
+        e.truncate_unsigned(Tmp::T0, 8, OpWidth::W64);
+        e.truncate_unsigned(Tmp::T0, 32, OpWidth::W32); // natural width -> nop
+        e.sign_extend(Tmp::T1, 16, OpWidth::W32);
+        assert_eq!(
+            disasm(&e.finish().unwrap()),
+            [
+                "shl $0x38,%rax",
+                "shr $0x38,%rax",
+                "nop",
+                "shl $0x10,%ecx",
+                "sar $0x10,%ecx"
+            ]
+        );
+    }
+
+    #[test]
+    fn set_cmp_unsigned_uses_below() {
+        let mut e = X86Emitter::new();
+        e.set_cmp(
+            Tmp::T2,
+            CmpCond::Lt,
+            Tmp::T0,
+            Src::Imm(5),
+            OpWidth::W64,
+            Signedness::Unsigned,
+        );
+        assert_eq!(
+            disasm(&e.finish().unwrap()),
+            ["cmp $5,%rax", "setb %dl", "movzbl %dl,%edx"]
+        );
+    }
+
+    #[test]
+    fn branch_to_unbound_label_is_an_error() {
+        let mut e = X86Emitter::new();
+        let l = e.new_label();
+        e.jump(l);
+        assert_eq!(e.finish(), Err(EmitError::UnboundLabel(l)));
+    }
+
+    // emit a block, commit it to exec memory and run it on real frame
+    #[test]
+    fn emitted_block_runs_on_frame() {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
+
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
+
+        // slot2 = slot0 - slot1; exit 2 if slot0 < slot1 (signed) else exit 1
+        let mut e = X86Emitter::new();
+        let less = e.new_label();
+        e.prologue(&layout);
+        e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
+        e.alu(
+            AluOp::Sub,
+            Tmp::T2,
+            Tmp::T0,
+            Src::Tmp(Tmp::T1),
+            OpWidth::W64,
+        );
+        e.store_slot(FrameSlot::new(2), Tmp::T2, OpWidth::W64);
+        e.branch_cmp(
+            CmpCond::Lt,
+            Tmp::T0,
+            Src::Tmp(Tmp::T1),
+            OpWidth::W64,
+            Signedness::Signed,
+            less,
+        );
+        e.ret_exit(1);
+        e.bind(less);
+        e.ret_exit(2);
+
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+
+        let mut frame = [10u64, 3, 0];
+        let exit = unsafe { page.as_fn()(frame.as_mut_ptr()) };
+        assert_eq!((exit, frame), (1, [10, 3, 7]));
+
+        let mut frame = [3u64, 10, 0];
+        let exit = unsafe { page.as_fn()(frame.as_mut_ptr()) };
+        assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
     }
 }
