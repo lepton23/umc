@@ -132,11 +132,12 @@ impl Emitter for X86Emitter {
 
     /// ABI aware methods
     fn prologue(&mut self, _layout: &FrameLayout) {
-        /// # Layout will be used to save pinned registers
+        /// # ------------------------------------------------------ Layout will be used to save pinned registers
         let _ = self.asm.push(FRAME_BASE);
         let _ = self.asm.mov(FRAME_BASE, ARG);
     }
     fn ret_exit(&mut self, exit_id: u32) {
+        // rax / eax for return values
         let _ = self.asm.mov(eax, exit_id); // CompiledFn returns u32 so mov into eax for same result ith short form
         let _ = self.asm.pop(FRAME_BASE);
         let _ = self.asm.ret();

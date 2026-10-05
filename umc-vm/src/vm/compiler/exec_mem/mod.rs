@@ -11,11 +11,10 @@ mod win;
 #[cfg(windows)]
 use win as sys;
 
+use crate::vm::compiler::bridge::CompiledFn;
+
 /// hardcoded page size just for assurance
 const PAGE_SIZE: usize = 4096;
-
-/// entry point of compiled block - will settle once stack frame layout is made
-pub type CompiledFn = unsafe extern "C" fn(frame: *mut u64) -> u32;
 
 #[derive(Debug)]
 pub enum ExecMemError {
