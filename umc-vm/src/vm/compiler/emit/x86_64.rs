@@ -1,6 +1,6 @@
 use crate::vm::compiler::emit::*;
 
-use iced_x86::code_asm::*;
+use iced_x86::{Code, Instruction, code_asm::*};
 
 const FRAME_BASE: AsmRegister64 = rbx;
 const SCRATCH64: AsmRegister64 = r11;
@@ -133,14 +133,14 @@ impl Emitter for X86Emitter {
     /// ABI aware methods
     fn prologue(&mut self, _layout: &FrameLayout) {
         /// # ------------------------------------------------------ Layout will be used to save pinned registers
-        let _ = self.asm.push(FRAME_BASE);
-        let _ = self.asm.mov(FRAME_BASE, ARG);
+        record(&mut self.error, self.asm.push(FRAME_BASE));
+        record(&mut self.error, self.asm.mov(FRAME_BASE, ARG));
     }
     fn ret_exit(&mut self, exit_id: u32) {
         // rax / eax for return values
-        let _ = self.asm.mov(eax, exit_id); // CompiledFn returns u32 so mov into eax for same result ith short form
-        let _ = self.asm.pop(FRAME_BASE);
-        let _ = self.asm.ret();
+        record(&mut self.error, self.asm.mov(eax, exit_id)); // CompiledFn returns u32 so mov into eax for same result ith short form
+        record(&mut self.error, self.asm.pop(FRAME_BASE));
+        record(&mut self.error, self.asm.ret());
     }
 
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth) {
@@ -167,9 +167,10 @@ impl Emitter for X86Emitter {
                 if let Ok(u) = u32::try_from(imm) {
                     self.asm.mov(r32(dst), u) // if can be directly converted from u32 do it
                 } else if let Ok(s) = i32::try_from(imm as i64) {
-                    self.asm.mov(r32(dst), s) // if not, sign-extended imm32 into 32 bit reg
+                    self.asm
+                        .add_instruction(Instruction::with2(Code::Mov_rm64_imm32, r64(dst), s)?) // if not, sign-extended imm32 into 64 bit reg
                 } else {
-                    self.asm.mov(r64(dst), imm) // or stick to 64 bit reg
+                    self.asm.mov(r64(dst), imm) // or stick to 64 bit reg directly
                 }
             }
             OpWidth::W32 => {
@@ -281,7 +282,7 @@ impl Emitter for X86Emitter {
                 if bits == 64 || bits == 0 {
                     self.asm.nop()
                 } else {
-                    self.asm.shl(r64(dst), 64 - bits);
+                    record(&mut self.error, self.asm.shl(r64(dst), 64 - bits));
                     self.asm.shr(r64(dst), 64 - bits)
                 }
             }
@@ -293,7 +294,7 @@ impl Emitter for X86Emitter {
                 if bits == 32 || bits == 0 {
                     self.asm.nop()
                 } else {
-                    self.asm.shl(r32(dst), 32 - bits);
+                    record(&mut self.error, self.asm.shl(r32(dst), 32 - bits));
                     self.asm.shr(r32(dst), 32 - bits)
                 }
             }
@@ -303,11 +304,11 @@ impl Emitter for X86Emitter {
     fn sign_extend(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth) {
         let r = match w {
             OpWidth::W64 => {
-                self.asm.shl(r64(dst), 64 - bits);
+                record(&mut self.error, self.asm.shl(r64(dst), 64 - bits));
                 self.asm.sar(r64(dst), 64 - bits)
             }
             OpWidth::W32 => {
-                self.asm.shl(r32(dst), 32 - bits);
+                record(&mut self.error, self.asm.shl(r32(dst), 32 - bits));
                 self.asm.sar(r32(dst), 32 - bits)
             }
         };
