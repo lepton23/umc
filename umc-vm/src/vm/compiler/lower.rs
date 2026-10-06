@@ -37,25 +37,205 @@ pub(crate) fn lower_block<E: Emitter>(
                     pc,
                     reason: "unsigned width",
                 })?;
-                let s = src(&mut layout, s, Tmp::T0, w, &mut e);
-                e.unop(UnOp::Mov, Tmp::T1, s, w);
-                e.truncate_unsigned(Tmp::T1, dst.width, w);
+                // src -> T1, dst -> T0
+                let s = src(&mut layout, s, Tmp::T1, w, &mut e);
+                e.unop(UnOp::Mov, Tmp::T0, s, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
                     width: dst.width,
                 });
-                e.store_slot(slot, Tmp::T1, w);
+                e.store_slot(slot, Tmp::T0, w);
             }
-            // Instruction::Add(params) => todo!(),
-            // Instruction::Sub(op) => todo!(),
-            // Instruction::Mul(op) => todo!(),
-            // Instruction::Div(op) => todo!(),
-            // Instruction::Mod(op) => todo!(),
-            // Instruction::And(op) => todo!(),
-            // Instruction::Or(op) => todo!(),
-            // Instruction::Xor(op) => todo!(),
-            // Instruction::Not(op) => todo!(),
-            // Instruction::Compare(cond, params) => todo!(),
+            Instruction::Add(AddParams::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Add, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Sub(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Mul(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Div(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Mod(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::And(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Or(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Xor(AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(
+                dst,
+                lhs,
+                rhs,
+            ))) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // lhs -> T0, rhs -> T1 / immediate, result in T0
+                tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
+                let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
+                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Not(NotParams::UnsignedInt(dst, s)) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                // not cmp -> T1, dst -> T0
+                let s = src(&mut layout, s, Tmp::T1, w, &mut e);
+                e.unop(UnOp::Not, Tmp::T0, s, w);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
+            Instruction::Compare(
+                BinaryCondition(cond),
+                CompareParams(dst, ConsistentComparison::UnsignedCompare(lhs, rhs)),
+            ) => {
+                let w = op_width(dst.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                tmp(&mut layout, lhs, Tmp::T1, w, &mut e);
+                let s = src(&mut layout, s, Tmp::T2, w, &mut e);
+                e.setcmp(Tmp::T0, cond, Tmp::T1, s, w, Signedness::Unsigned);
+                e.truncate_unsigned(Tmp::T0, dst.width, w);
+                let slot = layout.write_slot(SlotKey::Unsigned {
+                    index: dst.index,
+                    width: dst.width,
+                });
+                e.store_slot(slot, Tmp::T0, w);
+            }
             // Instruction::Jmp(op) => todo!(),
             // Instruction::Jal(op, reg) => todo!(),
             // Instruction::Bz(op, cmp) => todo!(),
@@ -112,6 +292,25 @@ fn src<E: Emitter>(
             });
             e.load_slot(tmp, slot, w);
             Src::Tmp(tmp)
+        }
+    }
+}
+
+fn tmp<E: Emitter>(
+    layout: &mut FrameLayout,
+    op: &RegOrConstant<UnsignedRegT>,
+    tmp: Tmp,
+    w: OpWidth,
+    e: &mut E,
+) {
+    match op {
+        RegOrConstant::Const(c) => e.mov_imm(tmp, *c, w),
+        RegOrConstant::Reg(r) => {
+            let slot = layout.read_slot(SlotKey::Unsigned {
+                index: r.index,
+                width: r.width,
+            });
+            e.load_slot(tmp, slot, w);
         }
     }
 }
