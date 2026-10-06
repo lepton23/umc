@@ -1,6 +1,7 @@
 use umc_model::reg_model::{Reg, RegOrConstant, UnsignedRegT};
 
 use crate::vm::compiler::frame::{FrameLayout, SlotKey};
+use crate::vm::widths::uint::UIntWidth;
 use crate::vm::{RegState, SafeAddress, helper};
 
 pub type CompiledFn = unsafe extern "C" fn(frame: *mut u64) -> u32;
@@ -31,11 +32,18 @@ impl FrameBuffer {
 
     /// commit results of compiled block back into VM registers
     pub fn commit(&self, layout: &FrameLayout, state: &mut RegState<SafeAddress>) {
-        todo!()
+        for i in 0..self.slots.len() {
+            match layout.slots[i].key {
+                SlotKey::Unsigned { index, width } => {
+                    let reg = Reg::<UnsignedRegT> { index, width };
+                    UIntWidth::store_u64(reg, state, self.slots[i]);
+                }
+            }
+        }
     }
 
     /// Convert frame buffer into mut ptr for passing into CompiledFn
     pub fn as_mut_ptr(&mut self) -> *mut u64 {
-        todo!()
+        self.slots.as_mut_ptr()
     }
 }
