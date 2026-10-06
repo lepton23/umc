@@ -35,6 +35,13 @@ pub struct FrameLayout {
 }
 
 impl FrameLayout {
+    pub fn new() -> Self {
+        Self {
+            slots: Vec::new(),
+            lookup: Default::default(),
+        }
+    }
+
     fn slot_for(&mut self, key: SlotKey, live_in: bool) -> (FrameSlot, &mut SlotInfo) {
         let slots = &mut self.slots;
         let slot = *self.lookup.entry(key).or_insert_with(|| {
