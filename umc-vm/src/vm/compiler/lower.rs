@@ -218,17 +218,28 @@ pub(crate) fn lower_block<E: Emitter>(
                 });
                 e.store_slot(slot, Tmp::T0, w);
             }
-            Instruction::Compare(
-                BinaryCondition(cond),
-                CompareParams(dst, ConsistentComparison::UnsignedCompare(lhs, rhs)),
-            ) => {
+            Instruction::Compare {
+                cond,
+                params:
+                    CompareParams {
+                        dst,
+                        args: ConsistentComparison::UnsignedCompare(lhs, rhs),
+                    },
+            } => {
                 let w = op_width(dst.width).ok_or(CompileError::Unsupported {
                     pc,
                     reason: "unsigned width",
                 })?;
                 tmp(&mut layout, lhs, Tmp::T1, w, &mut e);
-                let s = src(&mut layout, s, Tmp::T2, w, &mut e);
-                e.setcmp(Tmp::T0, cond, Tmp::T1, s, w, Signedness::Unsigned);
+                let rhs = src(&mut layout, rhs, Tmp::T2, w, &mut e);
+                e.set_cmp(
+                    Tmp::T0,
+                    cmp_cond(cond),
+                    Tmp::T1,
+                    rhs,
+                    w,
+                    Signedness::Unsigned,
+                );
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -236,10 +247,46 @@ pub(crate) fn lower_block<E: Emitter>(
                 });
                 e.store_slot(slot, Tmp::T0, w);
             }
-            // Instruction::Jmp(op) => todo!(),
-            // Instruction::Jal(op, reg) => todo!(),
-            // Instruction::Bz(op, cmp) => todo!(),
-            // Instruction::Bnz(op, cmp) => todo!(),
+            Instruction::Jmp(RegOrConstant::Const(target)) => {
+                // jumps end block so return exit to target
+                exit(&mut e, &mut exits, BlockExit::Goto(*target as usize));
+                return finish(e, layout, exits);
+            }
+            Instruction::Jal(RegOrConstant::Const(target), link) => {
+                e.mov_imm(Tmp::T0, (pc + 1) as u64, OpWidth::W64);
+                let slot = layout.write_slot(SlotKey::Instr { index: link.index });
+                e.store_slot(slot, Tmp::T0, OpWidth::W64);
+                exit(&mut e, &mut exits, BlockExit::Goto(*target as usize));
+                return finish(e, layout, exits);
+            }
+            Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Unsigned(op))
+            | Instruction::Bnz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
+                let cond = match &program[pc] {
+                    Instruction::Bz(..) => CmpCond::Eq,
+                    _ => CmpCond::Ne,
+                };
+                match op {
+                    // constant operand is just plain jump as outcome is known at compile time
+                    RegOrConstant::Const(c) => {
+                        let taken = (*c == 0) == (cond == CmpCond::Eq);
+                        let to = if taken { *target } else { pc + 1 };
+                        exit(&mut e, &mut exits, BlockExit::Goto(to));
+                    }
+                    RegOrConstant::Reg(r) => {
+                        let w = op_width(r.width).ok_or(CompileError::Unsupported {
+                            pc,
+                            reason: "unsigned width",
+                        })?;
+                        tmp(&mut layout, op, Tmp::T0, w, &mut e);
+                        let taken = e.new_label();
+                        e.branch_cmp(cond, Tmp::T0, Src::Imm(0), w, Signedness::Unsigned, taken);
+                        exit(&mut e, &mut exits, BlockExit::Goto(pc + 1)); // not taken
+                        e.bind(taken);
+                        exit(&mut e, &mut exits, BlockExit::Goto(*target));
+                    }
+                }
+                return finish(e, layout, exits);
+            }
             // Instruction::Alloc(mem, op) => todo!(),
             // Instruction::Free(mem) => todo!(),
             // Instruction::Load(reg, mem) => todo!(),
@@ -258,14 +305,8 @@ pub(crate) fn lower_block<E: Emitter>(
     }
 
     // fallthrough exit at end of block
-    exits.push(BlockExit::Goto(range.end));
-    e.ret_exit((exits.len() - 1) as u32);
-
-    Ok(Lowered {
-        code: e.finish().map_err(CompileError::Emit)?,
-        layout,
-        exits,
-    })
+    exit(&mut e, &mut exits, BlockExit::Goto(range.end));
+    finish(e, layout, exits)
 }
 
 fn op_width(w: RegWidth) -> Option<OpWidth> {
@@ -312,5 +353,32 @@ fn tmp<E: Emitter>(
             });
             e.load_slot(tmp, slot, w);
         }
+    }
+}
+
+fn finish<E: Emitter>(
+    e: E,
+    layout: FrameLayout,
+    exits: Vec<BlockExit>,
+) -> Result<Lowered, CompileError> {
+    Ok(Lowered {
+        code: e.finish().map_err(CompileError::Emit)?,
+        layout,
+        exits,
+    })
+}
+
+fn exit<E: Emitter>(e: &mut E, exits: &mut Vec<BlockExit>, to: BlockExit) {
+    exits.push(to);
+    e.ret_exit((exits.len() - 1) as u32);
+}
+
+fn cmp_cond(cond: &BinaryCondition) -> CmpCond {
+    match cond {
+        BinaryCondition::Equal => CmpCond::Eq,
+        BinaryCondition::GreaterThan => CmpCond::Gt,
+        BinaryCondition::GreaterThanOrEqualTo => CmpCond::Ge,
+        BinaryCondition::LessThan => CmpCond::Lt,
+        BinaryCondition::LessThanOrEqualTo => CmpCond::Le,
     }
 }

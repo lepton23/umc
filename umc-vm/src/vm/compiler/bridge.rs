@@ -1,6 +1,8 @@
-use umc_model::reg_model::{Reg, RegOrConstant, UnsignedRegT};
+use umc_model::reg_model::*;
 
 use crate::vm::compiler::frame::{FrameLayout, SlotKey};
+use crate::vm::state::StoreFor;
+use crate::vm::types::address::InstructionAddress;
 use crate::vm::widths::uint::UIntWidth;
 use crate::vm::{RegState, SafeAddress, helper};
 
@@ -26,6 +28,13 @@ impl FrameBuffer {
                     // unset regs read as 0
                     helper::read_uint::<u64, _>(&op, state).unwrap_or_default()
                 }
+                SlotKey::Instr { index } => {
+                    let op = RegOrConstant::Reg(Reg::<InstrRegT> {
+                        index,
+                        width: NoWidth {},
+                    });
+                    helper::read_iaddr(&op, state).pc() as u64
+                }
             }
         }));
     }
@@ -37,6 +46,13 @@ impl FrameBuffer {
                 SlotKey::Unsigned { index, width } => {
                     let reg = Reg::<UnsignedRegT> { index, width };
                     UIntWidth::store_u64(reg, state, self.slots[i]);
+                }
+                SlotKey::Instr { index } => {
+                    let reg = Reg::<InstrRegT> {
+                        index,
+                        width: NoWidth {},
+                    };
+                    state.store(reg, InstructionAddress::new(self.slots[i] as usize));
                 }
             }
         }
