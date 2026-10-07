@@ -5,12 +5,15 @@ mod block;
 mod bridge;
 mod emit;
 #[cfg(feature = "jit")]
+mod engine;
+#[cfg(feature = "jit")]
 mod exec_mem;
 mod frame;
 #[cfg(feature = "jit")]
 mod jit;
 mod lower;
 
+use crate::vm::compiler::frame::SlotInfo;
 use crate::vm::{RegState, SafeAddress};
 
 use crate::vm::compiler::{
@@ -57,8 +60,11 @@ pub struct CompiledRequest {
     pub stats: CompiledStats, // umc instructions, code bytes, frame slots, live in, dirty etc
 }
 
-/// STUB DEFINITION
-pub struct CompiledStats {}
+pub struct CompiledStats {
+    program: &[Instruction],
+    code: &[u8],
+    slots: Vec<SlotInfo>,
+}
 
 pub trait Compiler {
     // compile basic block starting at 'entry_pc'
