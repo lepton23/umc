@@ -14,6 +14,10 @@ mod test;
 
 use std::fmt::Display;
 
+#[cfg(feature = "jit")]
+use crate::vm::compiler::engine::JitEngine;
+#[cfg(feature = "jit")]
+use crate::vm::compiler::jit::NativeJit;
 use crate::vm::environment::AnyEnvironment;
 use crate::vm::memory::safe::{SafeAddress, SafeMemoryManager};
 use crate::vm::memory::{AllocateError, MemoryManager};
@@ -37,18 +41,28 @@ pub struct VirtualMachine {
     memory_constants: Vec<SafeAddress>,
     environment: AnyEnvironment,
     verbose: bool,
+    #[cfg(feature = "jit")]
+    jit: JitEngine,
 }
+
+/// Number of times a block entry is interpreted before it is JIT compiled
+pub const DEFAULT_THRESHOLD: u32 = 50;
 
 pub struct VMOptions {
     /// Whether to print extra debugging information about which instructions are being executed
     pub verbose: bool,
+    /// Ignored when the `jit` feature is disabled
+    pub jit_threshold: u32,
 }
 
 impl VMOptions {
     /// Recommended configuration for debugging the VM
     #[allow(unused)]
     pub fn vm_debug() -> Self {
-        Self { verbose: true }
+        Self {
+            verbose: true,
+            jit_threshold: DEFAULT_THRESHOLD,
+        }
     }
 }
 
@@ -84,6 +98,8 @@ impl VirtualMachine {
             memory_constants.push(address);
         }
 
+        #[cfg(feature = "jit")]
+        let program_len = program.instructions.len();
         Ok(Self {
             program: program.instructions,
             pc: 0,
@@ -92,6 +108,15 @@ impl VirtualMachine {
             memory_constants: memory_constants,
             verbose: options.verbose,
             environment: AnyEnvironment::new(),
+            #[cfg(feature = "jit")]
+            jit: JitEngine {
+                jit: NativeJit::new(),
+                counters: vec![0; program_len],
+                blocks: Default::default(),
+                blacklist: Default::default(),
+                threshold: options.jit_threshold,
+                verbose: options.verbose,
+            },
         })
     }
 
@@ -99,8 +124,18 @@ impl VirtualMachine {
     pub fn execute(&mut self) {
         let program_len = self.program.len();
         while self.pc < program_len {
+            #[cfg(feature = "jit")]
+            if let Some(next) = self.try_run_jit() {
+                self.pc = next;
+                continue;
+            }
             self.execute_step();
         }
+    }
+
+    #[cfg(feature = "jit")]
+    fn try_run_jit(&mut self) -> Option<usize> {
+        self.jit.try_run(self.pc, &self.program, &mut self.state)
     }
 
     fn execute_step(&mut self) {

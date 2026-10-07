@@ -132,7 +132,6 @@ impl Emitter for X86Emitter {
 
     /// ABI aware methods
     fn prologue(&mut self, _layout: &FrameLayout) {
-        /// # ------------------------------------------------------ Layout will be used to save pinned registers
         record(&mut self.error, self.asm.push(FRAME_BASE));
         record(&mut self.error, self.asm.mov(FRAME_BASE, ARG));
     }

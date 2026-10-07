@@ -63,6 +63,7 @@ fn main() {
 
     let options = VMOptions {
         verbose: args.verbose,
+        jit_threshold: umc_vm::vm::DEFAULT_THRESHOLD,
     };
     println!("Executing program");
     VirtualMachine::create(prog, options).unwrap().execute();

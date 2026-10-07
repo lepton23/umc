@@ -1,30 +1,46 @@
 use crate::vm::compiler::block::scan;
-use crate::vm::compiler::lower::{Lowered, lower_block};
+use crate::vm::compiler::lower::lower_block;
 use crate::vm::compiler::{
-    CompileError, CompiledBlock, CompiledRequest, Compiler, ExecuteError, bridge::FrameBuffer,
-    emit::Emitter, exec_mem::ExecPage,
+    BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler, ExecuteError,
+    bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
 };
 use crate::vm::{RegState, SafeAddress};
 
 use std::marker::PhantomData;
 use umc_model::instructions::Instruction;
 
+pub type NativeJit = Jit<NativeEmitter>;
+
 pub struct Jit<E: Emitter> {
     frame: FrameBuffer,
     _emitter: PhantomData<E>,
 }
 
+impl<E: Emitter> Jit<E> {
+    pub fn new() -> Self {
+        Self {
+            frame: FrameBuffer::new(),
+            _emitter: PhantomData,
+        }
+    }
+}
+
 impl<E: Emitter> Compiler for Jit<E> {
     // compile basic block starting at 'entry_pc'
-    fn compile_block(
+    fn compile_block<'p>(
         &mut self,
-        program: &[Instruction],
+        program: &'p [Instruction],
         entry_pc: usize,
-    ) -> Result<CompiledRequest, CompileError> {
+    ) -> Result<CompiledRequest<'p>, CompileError> {
         let covered = scan(program, entry_pc);
-        match lower_block(program, covered) {
+        match lower_block::<E>(program, covered.clone()) {
             Ok(lowered) => {
-                let page = commit(lowered.code);
+                let page = match ExecPage::commit(&lowered.code) {
+                    Ok(p) => p,
+                    Err(e) => return Err(CompileError::ExecMem(e)),
+                };
+                // clone before layout is moved into the block
+                let slots = lowered.layout.slots.clone();
                 Ok(CompiledRequest {
                     block: CompiledBlock {
                         entry_pc,
@@ -36,7 +52,7 @@ impl<E: Emitter> Compiler for Jit<E> {
                     stats: CompiledStats {
                         program,
                         code: lowered.code,
-                        slots: lowered.layout.slots,
+                        slots,
                     },
                 })
             }
@@ -49,6 +65,7 @@ impl<E: Emitter> Compiler for Jit<E> {
         &mut self,
         block: &CompiledBlock,
         state: &mut RegState<SafeAddress>,
+        entry_pc: usize,
     ) -> Result<usize, ExecuteError> {
         // load register states into frame layout
         self.frame.prepare(&block.layout, state);
@@ -59,18 +76,15 @@ impl<E: Emitter> Compiler for Jit<E> {
         let frame_ptr = self.frame.as_mut_ptr();
 
         // Execute compiled code
-        let exit_pc = unsafe { f(frame_ptr) };
+        let exit_id = unsafe { f(frame_ptr) };
 
         // spill results from frame back into register state
         self.frame.commit(&block.layout, state);
 
-        if exit_pc < 0 {
-            return Err(ExecuteError::BadExit {
-                entry_pc,
-                exit_id: exit_pc,
-            });
+        // exit_id indexes into block.exits to give the next pc
+        match block.exits.get(exit_id as usize) {
+            Some(BlockExit::Goto(pc)) => Ok(*pc),
+            None => Err(ExecuteError::BadExit { entry_pc, exit_id }),
         }
-
-        Ok(exit_pc as usize)
     }
 }

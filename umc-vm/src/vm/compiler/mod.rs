@@ -4,13 +4,10 @@
 mod block;
 mod bridge;
 mod emit;
-#[cfg(feature = "jit")]
-mod engine;
-#[cfg(feature = "jit")]
+pub mod engine;
 mod exec_mem;
 mod frame;
-#[cfg(feature = "jit")]
-mod jit;
+pub mod jit;
 mod lower;
 
 use crate::vm::compiler::frame::SlotInfo;
@@ -55,29 +52,30 @@ pub struct CompiledBlock {
     page: ExecPage,        // owns W^X pages
 }
 
-pub struct CompiledRequest {
+pub struct CompiledRequest<'p> {
     pub block: CompiledBlock,
-    pub stats: CompiledStats, // umc instructions, code bytes, frame slots, live in, dirty etc
+    pub stats: CompiledStats<'p>, // umc instructions, code bytes, frame slots, live in, dirty etc
 }
 
-pub struct CompiledStats {
-    program: &[Instruction],
-    code: &[u8],
+pub struct CompiledStats<'p> {
+    program: &'p [Instruction],
+    code: Vec<u8>,
     slots: Vec<SlotInfo>,
 }
 
 pub trait Compiler {
     // compile basic block starting at 'entry_pc'
-    fn compile_block(
+    fn compile_block<'p>(
         &mut self,
-        program: &[Instruction],
+        program: &'p [Instruction],
         entry_pc: usize,
-    ) -> Result<CompiledRequest, CompileError>;
+    ) -> Result<CompiledRequest<'p>, CompileError>;
 
     // load live-in registers from 'state' to frame, call host code, spill dirty registers, return pc to continure from
     fn execute_block(
         &mut self,
         block: &CompiledBlock,
         state: &mut RegState<SafeAddress>,
+        entry_pc: usize,
     ) -> Result<usize, ExecuteError>;
 }

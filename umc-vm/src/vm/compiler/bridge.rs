@@ -13,6 +13,10 @@ pub struct FrameBuffer {
 }
 
 impl FrameBuffer {
+    pub fn new() -> Self {
+        Self { slots: Vec::new() }
+    }
+
     /// read VM register state into frame buffer
     /// i.e. u64:0 = 3, u64:1 = 0, u64:2 = 1 turns into [3, 0, 1] in framebuffer.slots
     pub fn prepare(&mut self, layout: &FrameLayout, state: &RegState<SafeAddress>) {

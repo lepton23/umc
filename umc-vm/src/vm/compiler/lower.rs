@@ -29,6 +29,8 @@ pub(crate) fn lower_block<E: Emitter>(
     let mut layout = FrameLayout::new();
     let mut exits = Vec::new();
 
+    e.prologue(&layout);
+
     for pc in range.clone() {
         match &program[pc] {
             Instruction::Nop => {}
