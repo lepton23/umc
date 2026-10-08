@@ -67,3 +67,11 @@ impl FrameBuffer {
         self.slots.as_mut_ptr()
     }
 }
+
+pub extern "C" fn jit_dbg_unsigned(value: u64, index: u64, width: u64) {
+    let reg = Reg::<UnsignedRegT> {
+        index: index as _,
+        width: width as _,
+    };
+    println!("{} = {:x}", reg, value);
+}

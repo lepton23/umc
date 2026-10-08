@@ -4,6 +4,7 @@ use umc_model::instructions::*;
 use umc_model::reg_model::{RegOrConstant, UnsignedRegT};
 use umc_model::{RegWidth, instructions::Instruction};
 
+use crate::vm::compiler::bridge::jit_dbg_unsigned;
 use crate::vm::compiler::emit::*;
 use crate::vm::compiler::frame::SlotKey;
 use crate::vm::compiler::{
@@ -97,7 +98,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::Mul, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -117,7 +118,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::Div, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -137,7 +138,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::Mod, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -157,7 +158,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::And, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -177,7 +178,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::Or, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -197,7 +198,7 @@ pub(crate) fn lower_block<E: Emitter>(
                 // lhs -> T0, rhs -> T1 / immediate, result in T0
                 tmp(&mut layout, lhs, Tmp::T0, w, &mut e);
                 let rhs = src(&mut layout, rhs, Tmp::T1, w, &mut e);
-                e.alu(AluOp::Sub, Tmp::T0, Tmp::T0, rhs, w);
+                e.alu(AluOp::Xor, Tmp::T0, Tmp::T0, rhs, w);
                 e.truncate_unsigned(Tmp::T0, dst.width, w);
                 let slot = layout.write_slot(SlotKey::Unsigned {
                     index: dst.index,
@@ -296,8 +297,27 @@ pub(crate) fn lower_block<E: Emitter>(
             // Instruction::SizeOf(reg, reg_set) => todo!(),
             // Instruction::Cast(cast) => todo!(),
             // Instruction::ECall(params) => todo!(),
-            // Instruction::Dbg(reg) => todo!(),
+            Instruction::Dbg(AnyReg::Single(AnySingleReg::Unsigned(r))) => {
+                let w = op_width(r.width).ok_or(CompileError::Unsupported {
+                    pc,
+                    reason: "unsigned width",
+                })?;
+                let slot = layout.read_slot(SlotKey::Unsigned {
+                    index: r.index,
+                    width: r.width,
+                });
+                e.load_slot(Tmp::T0, slot, w);
+                e.call_host(
+                    jit_dbg_unsigned as *const () as usize,
+                    &[
+                        Src::Tmp(Tmp::T0),
+                        Src::Imm(r.index as u64),
+                        Src::Imm(r.width as u64),
+                    ],
+                )
+            }
             _ => {
+                println!("Unsupported instruction for lowering as of now");
                 return Err(CompileError::Unsupported {
                     pc,
                     reason: "instruction not lowered",

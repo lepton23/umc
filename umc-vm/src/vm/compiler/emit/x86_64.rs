@@ -9,12 +9,16 @@ const SCRATCH64: AsmRegister64 = r11;
 mod sys {
     use super::*;
     pub(super) const ARG: AsmRegister64 = rcx;
+    pub(super) const CALL_ARGS: [AsmRegister64; 4] = [rcx, rdx, r8, r9];
+    pub(super) const SHADOW: i32 = 32;
 }
 
 #[cfg(unix)]
 mod sys {
     use super::*;
     pub(super) const ARG: AsmRegister64 = rdi;
+    pub(super) const CALL_ARGS: [AsmRegister64; 4] = [rdi, rsi, rdx, rcx];
+    pub(super) const SHADOW: i32 = 0;
 }
 
 use sys::*;
@@ -35,7 +39,7 @@ fn r32(t: Tmp) -> AsmRegister32 {
     }
 }
 
-fn r16(t: Tmp) -> AsmRegister16 {
+fn reg16(t: Tmp) -> AsmRegister16 {
     match t {
         Tmp::T0 => ax,
         Tmp::T1 => cx,
@@ -43,7 +47,7 @@ fn r16(t: Tmp) -> AsmRegister16 {
     }
 }
 
-fn r8(t: Tmp) -> AsmRegister8 {
+fn reg8(t: Tmp) -> AsmRegister8 {
     match t {
         Tmp::T0 => al,
         Tmp::T1 => cl,
@@ -140,6 +144,27 @@ impl Emitter for X86Emitter {
         record(&mut self.error, self.asm.mov(eax, exit_id)); // CompiledFn returns u32 so mov into eax for same result ith short form
         record(&mut self.error, self.asm.pop(FRAME_BASE));
         record(&mut self.error, self.asm.ret());
+    }
+
+    fn call_host(&mut self, f: usize, args: &[Src]) {
+        debug_assert!(args.len() <= CALL_ARGS.len());
+        for (i, a) in args.iter().enumerate() {
+            let r = match *a {
+                Src::Tmp(t) => self.asm.mov(CALL_ARGS[i], r64(t)),
+                Src::Imm(v) => self.asm.mov(CALL_ARGS[i], v),
+            };
+            record(&mut self.error, r);
+        }
+        // Win64 ABI requires 32 bytes of shadow space before calls so push then pop it after call
+        // rsp is 16-aligned, 8 mod 16 on entry, plus prologues push rbx
+        if SHADOW > 0 {
+            record(&mut self.error, self.asm.sub(rsp, SHADOW));
+        }
+        record(&mut self.error, self.asm.mov(SCRATCH64, f as u64));
+        record(&mut self.error, self.asm.call(SCRATCH64));
+        if SHADOW > 0 {
+            record(&mut self.error, self.asm.add(rsp, SHADOW));
+        }
     }
 
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth) {
@@ -320,7 +345,7 @@ impl Emitter for X86Emitter {
         record(&mut self.error, r);
 
         let a = &mut self.asm;
-        let d = r8(dst);
+        let d = reg8(dst);
 
         use CmpCond::*;
         use Signedness::*;
@@ -409,6 +434,7 @@ fn alu_rr64(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
+        _ => Ok(()),
     }
 }
 
@@ -426,6 +452,7 @@ fn alu_rr32(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
+        _ => Ok(()),
     }
 }
 
@@ -438,6 +465,7 @@ fn alu_ri64(a: &mut CodeAssembler, op: AluOp, d: AsmRegister64, imm: i32) -> Res
         AluOp::And => a.and(d, imm),
         AluOp::Or => a.or(d, imm),
         AluOp::Xor => a.xor(d, imm),
+        _ => Ok(()),
     }
 }
 
@@ -450,6 +478,7 @@ fn alu_ri32(a: &mut CodeAssembler, op: AluOp, d: AsmRegister32, imm: i32) -> Res
         AluOp::And => a.and(d, imm),
         AluOp::Or => a.or(d, imm),
         AluOp::Xor => a.xor(d, imm),
+        _ => Ok(()),
     }
 }
 

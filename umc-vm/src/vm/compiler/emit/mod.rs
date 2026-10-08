@@ -27,6 +27,8 @@ pub enum AluOp {
     Add,
     Sub,
     Mul,
+    Div,
+    Mod,
     And,
     Or,
     Xor,
@@ -72,6 +74,8 @@ pub trait Emitter: Sized {
     /// ABI aware methods
     fn prologue(&mut self, layout: &FrameLayout);
     fn ret_exit(&mut self, exit_id: u32);
+
+    fn call_host(&mut self, f: usize, args: &[Src]);
 
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth);
     fn store_slot(&mut self, slot: FrameSlot, src: Tmp, w: OpWidth);
