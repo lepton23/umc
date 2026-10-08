@@ -1,5 +1,5 @@
 .FIB:
-  mov u64:0, #100
+  mov u64:0, #50
   bz .END, u64:0
 
   mov u64:1, #0 ; int cur = 0

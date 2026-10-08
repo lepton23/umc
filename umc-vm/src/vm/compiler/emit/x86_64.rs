@@ -3,6 +3,7 @@ use crate::vm::compiler::emit::*;
 use iced_x86::{Code, Instruction, Register, code_asm::*};
 
 const FRAME_BASE: AsmRegister64 = rbx;
+const SCRATCH32: AsmRegister32 = r11d;
 const SCRATCH64: AsmRegister64 = r11;
 
 #[cfg(windows)]
@@ -238,37 +239,101 @@ impl Emitter for X86Emitter {
     /// so now ALU ops become mov dst, lhs then op dst, rhs
     /// but need to account for dst == rhs and dst != lhs as the mov would override rhs before its read
     fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth) {
-        match rhs {
-            Src::Tmp(r) if r == dst && dst != lhs => match op {
-                AluOp::Sub => {
-                    // case: turn dst = lhs - rhs where dst == rhs
-                    // into: dst = -rhs -> dst + lhs
-                    // i.e. lhs - rhs
-                    self.neg(dst, w);
-                    self.alu_rr(AluOp::Add, dst, lhs, w);
-                }
-                _ => self.alu_rr(op, dst, lhs, w), // commutative so just do as normal
+        // Handle Div / Mod Static register calling convention
+        match op {
+            AluOp::Div => match rhs {
+                Src::Tmp(r) => match w {
+                    OpWidth::W64 => {
+                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
+                        self.alu_rr(op, dst, r, w);
+                        record(&mut self.error, self.asm.mov(r64(dst), rax));
+                    }
+                    OpWidth::W32 => {
+                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
+                        self.alu_rr(op, dst, r, w);
+                        record(&mut self.error, self.asm.mov(r32(dst), eax));
+                    }
+                },
+                Src::Imm(imm) => match w {
+                    // move immediates into scratch reg for division
+                    OpWidth::W64 => {
+                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
+                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
+                        alu_rr64(&mut self.asm, op, rax, SCRATCH64);
+                        record(&mut self.error, self.asm.mov(r64(dst), rax));
+                    }
+                    OpWidth::W32 => {
+                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
+                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
+                        alu_rr32(&mut self.asm, op, eax, SCRATCH32);
+                        record(&mut self.error, self.asm.mov(r32(dst), eax));
+                    }
+                },
             },
-            Src::Tmp(r) => {
-                // just do normal move into dst then do op
-                self.mov_rr(dst, lhs, w);
-                self.alu_rr(op, dst, r, w);
-            }
-            Src::Imm(imm) => {
-                self.mov_rr(dst, lhs, w);
-                let r = match w {
-                    OpWidth::W32 => alu_ri32(&mut self.asm, op, r32(dst), imm as i32),
-                    OpWidth::W64 => match i32::try_from(imm as i64) {
-                        // if imm fits in i32 use register-immediate op
-                        Ok(s) => alu_ri64(&mut self.asm, op, r64(dst), s),
-                        Err(_) => {
-                            // too wide for imm32, go r11 and do a register-register op
-                            record(&mut self.error, self.asm.mov(SCRATCH64, imm));
-                            alu_rr64(&mut self.asm, op, r64(dst), SCRATCH64)
+            AluOp::Mod => match rhs {
+                Src::Tmp(r) => match w {
+                    OpWidth::W64 => {
+                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
+                        self.alu_rr(op, dst, r, w);
+                        record(&mut self.error, self.asm.mov(r64(dst), rdx));
+                    }
+                    OpWidth::W32 => {
+                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
+                        self.alu_rr(op, dst, r, w);
+                        record(&mut self.error, self.asm.mov(r32(dst), edx));
+                    }
+                },
+                Src::Imm(imm) => match w {
+                    // move immediates into scratch reg for division
+                    OpWidth::W64 => {
+                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
+                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
+                        alu_rr64(&mut self.asm, op, rax, SCRATCH64);
+                        record(&mut self.error, self.asm.mov(r64(dst), rdx));
+                    }
+                    OpWidth::W32 => {
+                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
+                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
+                        alu_rr32(&mut self.asm, op, eax, SCRATCH32);
+                        record(&mut self.error, self.asm.mov(r32(dst), edx));
+                    }
+                },
+            },
+            _ => {
+                // handle other ops
+                match rhs {
+                    Src::Tmp(r) if r == dst && dst != lhs => match op {
+                        AluOp::Sub => {
+                            // case: turn dst = lhs - rhs where dst == rhs
+                            // into: dst = -rhs -> dst + lhs
+                            // i.e. lhs - rhs
+                            self.neg(dst, w);
+                            self.alu_rr(AluOp::Add, dst, lhs, w);
                         }
+                        _ => self.alu_rr(op, dst, lhs, w), // commutative so just do as normal
                     },
-                };
-                record(&mut self.error, r);
+                    Src::Tmp(r) => {
+                        // just do normal move into dst then do op
+                        self.mov_rr(dst, lhs, w);
+                        self.alu_rr(op, dst, r, w);
+                    }
+                    Src::Imm(imm) => {
+                        self.mov_rr(dst, lhs, w);
+                        let r = match w {
+                            OpWidth::W32 => alu_ri32(&mut self.asm, op, r32(dst), imm as i32),
+                            OpWidth::W64 => match i32::try_from(imm as i64) {
+                                // if imm fits in i32 use register-immediate op
+                                Ok(s) => alu_ri64(&mut self.asm, op, r64(dst), s),
+                                Err(_) => {
+                                    // too wide for imm32, go r11 and do a register-register op
+                                    record(&mut self.error, self.asm.mov(SCRATCH64, imm));
+                                    alu_rr64(&mut self.asm, op, r64(dst), SCRATCH64)
+                                }
+                            },
+                        };
+                        record(&mut self.error, r);
+                    }
+                }
             }
         }
     }
@@ -434,6 +499,7 @@ fn alu_rr64(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
+        AluOp::Div => a.div(s),
         _ => Ok(()),
     }
 }
@@ -452,6 +518,7 @@ fn alu_rr32(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
+        AluOp::Div => a.div(s),
         _ => Ok(()),
     }
 }

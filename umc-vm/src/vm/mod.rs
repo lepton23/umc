@@ -46,7 +46,7 @@ pub struct VirtualMachine {
 }
 
 /// Number of times a block entry is interpreted before it is JIT compiled
-pub const DEFAULT_THRESHOLD: u32 = 50;
+pub const DEFAULT_THRESHOLD: u32 = 20;
 
 pub struct VMOptions {
     /// Whether to print extra debugging information about which instructions are being executed
