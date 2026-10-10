@@ -103,6 +103,27 @@ impl X86Emitter {
             },
         }
     }
+
+    /// unsigned dst = lhs / rhs or lhs % rhs
+    /// div divides rdx:rax by its operand, quotient -> rax, remainder -> rdx, so T0 and T2 are clobbered
+    fn div_mod(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth) {
+        // divisor goes in scratch first so writing rax / rdx below can't overwrite it
+        let r = match rhs {
+            Src::Tmp(s) => self.asm.mov(SCRATCH64, r64(s)),
+            Src::Imm(imm) => self.asm.mov(SCRATCH64, imm),
+        };
+        record(&mut self.error, r);
+        self.mov_rr(Tmp::T0, lhs, w);
+        // high half of dividend must be zero, otherwise quotient is wrong or faults on overflow
+        record(&mut self.error, self.asm.xor(edx, edx));
+        let r = match w {
+            OpWidth::W64 => self.asm.div(SCRATCH64),
+            OpWidth::W32 => self.asm.div(SCRATCH32),
+        };
+        record(&mut self.error, r);
+        let result = if op == AluOp::Mod { Tmp::T2 } else { Tmp::T0 };
+        self.mov_rr(dst, result, w);
+    }
 }
 
 impl Emitter for X86Emitter {
@@ -220,6 +241,9 @@ impl Emitter for X86Emitter {
     }
     // register register ALU op
     fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth) {
+        if let AluOp::Div | AluOp::Mod = op {
+            return self.div_mod(op, dst, dst, Src::Tmp(src), w);
+        }
         let r = match w {
             OpWidth::W64 => alu_rr64(&mut self.asm, op, r64(dst), r64(src)),
             OpWidth::W32 => alu_rr32(&mut self.asm, op, r32(dst), r32(src)),
@@ -241,64 +265,7 @@ impl Emitter for X86Emitter {
     fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth) {
         // Handle Div / Mod Static register calling convention
         match op {
-            AluOp::Div => match rhs {
-                Src::Tmp(r) => match w {
-                    OpWidth::W64 => {
-                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
-                        self.alu_rr(op, dst, r, w);
-                        record(&mut self.error, self.asm.mov(r64(dst), rax));
-                    }
-                    OpWidth::W32 => {
-                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
-                        self.alu_rr(op, dst, r, w);
-                        record(&mut self.error, self.asm.mov(r32(dst), eax));
-                    }
-                },
-                Src::Imm(imm) => match w {
-                    // move immediates into scratch reg for division
-                    OpWidth::W64 => {
-                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
-                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
-                        alu_rr64(&mut self.asm, op, rax, SCRATCH64);
-                        record(&mut self.error, self.asm.mov(r64(dst), rax));
-                    }
-                    OpWidth::W32 => {
-                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
-                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
-                        alu_rr32(&mut self.asm, op, eax, SCRATCH32);
-                        record(&mut self.error, self.asm.mov(r32(dst), eax));
-                    }
-                },
-            },
-            AluOp::Mod => match rhs {
-                Src::Tmp(r) => match w {
-                    OpWidth::W64 => {
-                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
-                        self.alu_rr(op, dst, r, w);
-                        record(&mut self.error, self.asm.mov(r64(dst), rdx));
-                    }
-                    OpWidth::W32 => {
-                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
-                        self.alu_rr(op, dst, r, w);
-                        record(&mut self.error, self.asm.mov(r32(dst), edx));
-                    }
-                },
-                Src::Imm(imm) => match w {
-                    // move immediates into scratch reg for division
-                    OpWidth::W64 => {
-                        record(&mut self.error, self.asm.mov(rax, r64(lhs)));
-                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
-                        alu_rr64(&mut self.asm, op, rax, SCRATCH64);
-                        record(&mut self.error, self.asm.mov(r64(dst), rdx));
-                    }
-                    OpWidth::W32 => {
-                        record(&mut self.error, self.asm.mov(eax, r32(lhs)));
-                        record(&mut self.error, self.asm.mov(SCRATCH64, imm));
-                        alu_rr32(&mut self.asm, op, eax, SCRATCH32);
-                        record(&mut self.error, self.asm.mov(r32(dst), edx));
-                    }
-                },
-            },
+            AluOp::Div | AluOp::Mod => self.div_mod(op, dst, lhs, rhs, w),
             _ => {
                 // handle other ops
                 match rhs {
@@ -499,8 +466,7 @@ fn alu_rr64(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
-        AluOp::Div => a.div(s),
-        _ => Ok(()),
+        AluOp::Div | AluOp::Mod => unreachable!("div/mod are emitted by X86Emitter::div_mod"),
     }
 }
 
@@ -518,8 +484,7 @@ fn alu_rr32(
         AluOp::And => a.and(d, s),
         AluOp::Or => a.or(d, s),
         AluOp::Xor => a.xor(d, s),
-        AluOp::Div => a.div(s),
-        _ => Ok(()),
+        AluOp::Div | AluOp::Mod => unreachable!("div/mod are emitted by X86Emitter::div_mod"),
     }
 }
 
@@ -532,7 +497,7 @@ fn alu_ri64(a: &mut CodeAssembler, op: AluOp, d: AsmRegister64, imm: i32) -> Res
         AluOp::And => a.and(d, imm),
         AluOp::Or => a.or(d, imm),
         AluOp::Xor => a.xor(d, imm),
-        _ => Ok(()),
+        AluOp::Div | AluOp::Mod => unreachable!("div/mod are emitted by X86Emitter::div_mod"),
     }
 }
 
@@ -545,7 +510,7 @@ fn alu_ri32(a: &mut CodeAssembler, op: AluOp, d: AsmRegister32, imm: i32) -> Res
         AluOp::And => a.and(d, imm),
         AluOp::Or => a.or(d, imm),
         AluOp::Xor => a.xor(d, imm),
-        _ => Ok(()),
+        AluOp::Div | AluOp::Mod => unreachable!("div/mod are emitted by X86Emitter::div_mod"),
     }
 }
 
@@ -756,5 +721,83 @@ mod tests {
         let mut frame = [3u64, 10, 0];
         let exit = unsafe { page.as_fn()(frame.as_mut_ptr()) };
         assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
+    }
+
+    // run dst = slot0 op rhs for each (op, rhs) with rdx dirtied beforehand, results stored from slot 2 onwards
+    fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
+
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
+        let mut e = X86Emitter::new();
+        e.prologue(&layout);
+        for (i, (op, rhs)) in ops.iter().enumerate() {
+            e.mov_imm(Tmp::T2, 0xDEAD, OpWidth::W64); // garbage high half of dividend
+            e.load_slot(Tmp::T0, FrameSlot::new(0), w);
+            e.load_slot(Tmp::T1, FrameSlot::new(1), w);
+            e.alu(*op, Tmp::T0, Tmp::T0, *rhs, w);
+            e.store_slot(FrameSlot::new(2 + i as u16), Tmp::T0, w);
+        }
+        e.ret_exit(0);
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    }
+
+    #[test]
+    fn div_mod_64_ignore_dirty_rdx() {
+        let ops = [
+            (AluOp::Div, Src::Tmp(Tmp::T1)),
+            (AluOp::Mod, Src::Tmp(Tmp::T1)),
+            (AluOp::Div, Src::Imm(7)),
+            (AluOp::Mod, Src::Imm(7)),
+        ];
+        let mut frame = [100u64, 3, 0, 0, 0, 0];
+        run_div_mod(OpWidth::W64, &ops, &mut frame);
+        assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
+    }
+
+    #[test]
+    fn div_mod_32_ignore_dirty_rdx() {
+        let ops = [
+            (AluOp::Div, Src::Tmp(Tmp::T1)),
+            (AluOp::Mod, Src::Tmp(Tmp::T1)),
+            (AluOp::Div, Src::Imm(7)),
+            (AluOp::Mod, Src::Imm(7)),
+        ];
+        let mut frame = [100u64, 3, 0, 0, 0, 0];
+        run_div_mod(OpWidth::W32, &ops, &mut frame);
+        assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
+    }
+
+    #[test]
+    fn div_mod_divisor_aliasing_rax_or_rdx() {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
+
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
+        let mut e = X86Emitter::new();
+        e.prologue(&layout);
+        // slot2 = slot0 / T0 where T0 = slot1 (divisor in rax), lhs in rcx
+        e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
+        e.alu(AluOp::Div, Tmp::T0, Tmp::T1, Src::Tmp(Tmp::T0), OpWidth::W64);
+        e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
+        // slot3 = slot0 % T2 where T2 = slot1 (divisor in rdx)
+        e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
+        e.alu(AluOp::Mod, Tmp::T1, Tmp::T0, Src::Tmp(Tmp::T2), OpWidth::W64);
+        e.store_slot(FrameSlot::new(3), Tmp::T1, OpWidth::W64);
+        e.ret_exit(0);
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+
+        let mut frame = [100u64, 3, 0, 0];
+        unsafe { page.as_fn()(frame.as_mut_ptr()) };
+        assert_eq!(frame, [100, 3, 33, 1]);
     }
 }

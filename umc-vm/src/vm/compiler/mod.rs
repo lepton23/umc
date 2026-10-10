@@ -42,6 +42,10 @@ pub enum ExecuteError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockExit {
     Goto(usize),
+    // compiled code can't handle this instruction at runtime (i.e. divide by zero)
+    // interpreter must execute exactly this one instruction before the jit is tried again
+    // otherwise a block starting at this pc would bail back to itself forever
+    Interpret(usize),
 }
 
 pub struct CompiledBlock {
@@ -71,11 +75,11 @@ pub trait Compiler {
         entry_pc: usize,
     ) -> Result<CompiledRequest<'p>, CompileError>;
 
-    // load live-in registers from 'state' to frame, call host code, spill dirty registers, return pc to continure from
+    // load registers from 'state' to frame, call host code, spill registers, return where to continue from
     fn execute_block(
         &mut self,
         block: &CompiledBlock,
         state: &mut RegState<SafeAddress>,
         entry_pc: usize,
-    ) -> Result<usize, ExecuteError>;
+    ) -> Result<BlockExit, ExecuteError>;
 }

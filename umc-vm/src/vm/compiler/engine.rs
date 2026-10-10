@@ -1,7 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::vm::{
-    compiler::{CompiledBlock, Compiler, jit::*},
+    compiler::{BlockExit, CompiledBlock, Compiler, jit::*},
     memory::safe::SafeAddress,
     state::RegState,
 };
@@ -17,14 +17,14 @@ pub struct JitEngine {
 }
 
 impl JitEngine {
-    // returns Some(next_pc) if compiled block ran correctly, None if should be interpreted
+    // returns Some(exit) if compiled block ran correctly, None if should be interpreted
     // BadExit is a codegen error not a program error so just blacklist block
     pub fn try_run(
         &mut self,
         pc: usize,
         program: &[Instruction],
         state: &mut RegState<SafeAddress>,
-    ) -> Option<usize> {
+    ) -> Option<BlockExit> {
         // Blacklisted blocks should be interpreted
         if self.blacklist.contains(&pc) {
             println!("Interpreting blacklisted block at pc: {pc}");
@@ -49,7 +49,7 @@ impl JitEngine {
         // HOT & COMPILED
         println!("Executing compiled block at pc: {pc}");
         match self.jit.execute_block(self.blocks.get(&pc)?, state, pc) {
-            Ok(exit_id) => return Some(exit_id),
+            Ok(exit) => return Some(exit),
             Err(_) => {
                 self.blacklist.insert(pc);
                 return None;

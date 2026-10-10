@@ -15,6 +15,8 @@ mod test;
 use std::fmt::Display;
 
 #[cfg(feature = "jit")]
+use crate::vm::compiler::BlockExit;
+#[cfg(feature = "jit")]
 use crate::vm::compiler::engine::JitEngine;
 #[cfg(feature = "jit")]
 use crate::vm::compiler::jit::NativeJit;
@@ -125,16 +127,21 @@ impl VirtualMachine {
         let program_len = self.program.len();
         while self.pc < program_len {
             #[cfg(feature = "jit")]
-            if let Some(next) = self.try_run_jit() {
-                self.pc = next;
-                continue;
+            match self.try_run_jit() {
+                Some(BlockExit::Goto(next)) => {
+                    self.pc = next;
+                    continue;
+                }
+                // fall through to interpret this one instruction without consulting jit
+                Some(BlockExit::Interpret(at)) => self.pc = at,
+                None => {}
             }
             self.execute_step();
         }
     }
 
     #[cfg(feature = "jit")]
-    fn try_run_jit(&mut self) -> Option<usize> {
+    fn try_run_jit(&mut self) -> Option<BlockExit> {
         self.jit.try_run(self.pc, &self.program, &mut self.state)
     }
 
