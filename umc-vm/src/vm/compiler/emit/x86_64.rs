@@ -106,23 +106,48 @@ impl X86Emitter {
 
     /// unsigned dst = lhs / rhs or lhs % rhs
     /// div divides rdx:rax by its operand, quotient -> rax, remainder -> rdx, so T0 and T2 are clobbered
-    fn div_mod(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth) {
-        // divisor goes in scratch first so writing rax / rdx below can't overwrite it
-        let r = match rhs {
-            Src::Tmp(s) => self.asm.mov(SCRATCH64, r64(s)),
-            Src::Imm(imm) => self.asm.mov(SCRATCH64, imm),
-        };
-        record(&mut self.error, r);
-        self.mov_rr(Tmp::T0, lhs, w);
-        // high half of dividend must be zero, otherwise quotient is wrong or faults on overflow
-        record(&mut self.error, self.asm.xor(edx, edx));
-        let r = match w {
-            OpWidth::W64 => self.asm.div(SCRATCH64),
-            OpWidth::W32 => self.asm.div(SCRATCH32),
-        };
-        record(&mut self.error, r);
-        let result = if op == AluOp::Mod { Tmp::T2 } else { Tmp::T0 };
-        self.mov_rr(dst, result, w);
+    fn div_mod(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth, sign: Signedness) {
+        match sign {
+            Signedness::Unsigned => {
+                // divisor goes in scratch first so writing rax / rdx below can't overwrite it
+                let r = match rhs {
+                    Src::Tmp(s) => self.asm.mov(SCRATCH64, r64(s)),
+                    Src::Imm(imm) => self.asm.mov(SCRATCH64, imm),
+                };
+                record(&mut self.error, r);
+                self.mov_rr(Tmp::T0, lhs, w);
+                // high half of dividend must be zero, otherwise quotient is wrong or faults on overflow
+                record(&mut self.error, self.asm.xor(edx, edx));
+                let r = match w {
+                    OpWidth::W64 => self.asm.div(SCRATCH64),
+                    OpWidth::W32 => self.asm.div(SCRATCH32),
+                };
+                record(&mut self.error, r);
+                let result = if op == AluOp::Mod { Tmp::T2 } else { Tmp::T0 };
+                self.mov_rr(dst, result, w);
+            }
+            Signedness::Signed => {
+                // divisor goes in scratch first so writing rax / rdx below can't overwrite it
+                let r = match rhs {
+                    Src::Tmp(s) => self.asm.mov(SCRATCH64, r64(s)),
+                    Src::Imm(imm) => self.asm.mov(SCRATCH64, imm),
+                };
+                record(&mut self.error, r);
+                self.mov_rr(Tmp::T0, lhs, w);
+                // high half of dividend must be sign extension of dividend, otherwise quotient is wrong or faults on overflow
+                match w {
+                    OpWidth::W32 => record(&mut self.error, self.asm.cdq()),
+                    OpWidth::W64 => record(&mut self.error, self.asm.cqo()),
+                }
+                let r = match w {
+                    OpWidth::W64 => self.asm.idiv(SCRATCH64),
+                    OpWidth::W32 => self.asm.idiv(SCRATCH32),
+                };
+                record(&mut self.error, r);
+                let result = if op == AluOp::Mod { Tmp::T2 } else { Tmp::T0 };
+                self.mov_rr(dst, result, w);
+            }
+        }
     }
 }
 
@@ -240,9 +265,9 @@ impl Emitter for X86Emitter {
         record(&mut self.error, r);
     }
     // register register ALU op
-    fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth) {
+    fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth, signed: Signedness) {
         if let AluOp::Div | AluOp::Mod = op {
-            return self.div_mod(op, dst, dst, Src::Tmp(src), w);
+            return self.div_mod(op, dst, dst, Src::Tmp(src), w, signed);
         }
         let r = match w {
             OpWidth::W64 => alu_rr64(&mut self.asm, op, r64(dst), r64(src)),
@@ -262,10 +287,10 @@ impl Emitter for X86Emitter {
     /// ALU is 3 address but x86 is 2 address so we need to translate dst = lhs op rhs -> dst = dst op rhs
     /// so now ALU ops become mov dst, lhs then op dst, rhs
     /// but need to account for dst == rhs and dst != lhs as the mov would override rhs before its read
-    fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth) {
+    fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth, sign: Signedness) {
         // Handle Div / Mod Static register calling convention
         match op {
-            AluOp::Div | AluOp::Mod => self.div_mod(op, dst, lhs, rhs, w),
+            AluOp::Div | AluOp::Mod => self.div_mod(op, dst, lhs, rhs, w, sign),
             _ => {
                 // handle other ops
                 match rhs {
@@ -275,14 +300,14 @@ impl Emitter for X86Emitter {
                             // into: dst = -rhs -> dst + lhs
                             // i.e. lhs - rhs
                             self.neg(dst, w);
-                            self.alu_rr(AluOp::Add, dst, lhs, w);
+                            self.alu_rr(AluOp::Add, dst, lhs, w, sign);
                         }
-                        _ => self.alu_rr(op, dst, lhs, w), // commutative so just do as normal
+                        _ => self.alu_rr(op, dst, lhs, w, sign), // commutative so just do as normal
                     },
                     Src::Tmp(r) => {
                         // just do normal move into dst then do op
                         self.mov_rr(dst, lhs, w);
-                        self.alu_rr(op, dst, r, w);
+                        self.alu_rr(op, dst, r, w, sign);
                     }
                     Src::Imm(imm) => {
                         self.mov_rr(dst, lhs, w);
@@ -361,12 +386,28 @@ impl Emitter for X86Emitter {
     fn sign_extend(&mut self, dst: Tmp, bits: RegWidth, w: OpWidth) {
         let r = match w {
             OpWidth::W64 => {
-                record(&mut self.error, self.asm.shl(r64(dst), 64 - bits));
-                self.asm.sar(r64(dst), 64 - bits)
+                debug_assert!(bits <= 64);
+                if bits > 64 {
+                    return;
+                }
+                if bits == 64 || bits == 0 {
+                    self.asm.nop()
+                } else {
+                    record(&mut self.error, self.asm.shl(r64(dst), 64 - bits));
+                    self.asm.sar(r64(dst), 64 - bits)
+                }
             }
             OpWidth::W32 => {
-                record(&mut self.error, self.asm.shl(r32(dst), 32 - bits));
-                self.asm.sar(r32(dst), 32 - bits)
+                debug_assert!(bits <= 32);
+                if bits > 32 {
+                    return;
+                }
+                if bits == 32 || bits == 0 {
+                    self.asm.nop()
+                } else {
+                    record(&mut self.error, self.asm.shl(r32(dst), 32 - bits));
+                    self.asm.sar(r32(dst), 32 - bits)
+                }
             }
         };
         record(&mut self.error, r);
@@ -786,12 +827,24 @@ mod tests {
         // slot2 = slot0 / T0 where T0 = slot1 (divisor in rax), lhs in rcx
         e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
-        e.alu(AluOp::Div, Tmp::T0, Tmp::T1, Src::Tmp(Tmp::T0), OpWidth::W64);
+        e.alu(
+            AluOp::Div,
+            Tmp::T0,
+            Tmp::T1,
+            Src::Tmp(Tmp::T0),
+            OpWidth::W64,
+        );
         e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
         // slot3 = slot0 % T2 where T2 = slot1 (divisor in rdx)
         e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
-        e.alu(AluOp::Mod, Tmp::T1, Tmp::T0, Src::Tmp(Tmp::T2), OpWidth::W64);
+        e.alu(
+            AluOp::Mod,
+            Tmp::T1,
+            Tmp::T0,
+            Src::Tmp(Tmp::T2),
+            OpWidth::W64,
+        );
         e.store_slot(FrameSlot::new(3), Tmp::T1, OpWidth::W64);
         e.ret_exit(0);
         let page = ExecPage::commit(&e.finish().unwrap()).unwrap();

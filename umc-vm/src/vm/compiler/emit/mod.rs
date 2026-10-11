@@ -82,10 +82,10 @@ pub trait Emitter: Sized {
 
     fn mov_imm(&mut self, dst: Tmp, imm: u64, w: OpWidth);
     fn mov_rr(&mut self, dst: Tmp, src: Tmp, w: OpWidth);
-    fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth);
+    fn alu_rr(&mut self, op: AluOp, dst: Tmp, src: Tmp, w: OpWidth, sign: Signedness);
     fn neg(&mut self, dst: Tmp, w: OpWidth);
 
-    fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth);
+    fn alu(&mut self, op: AluOp, dst: Tmp, lhs: Tmp, rhs: Src, w: OpWidth, sign: Signedness);
     fn unop(&mut self, op: UnOp, dst: Tmp, src: Src, w: OpWidth);
 
     /// UMC wrap at declared width - noop when bits already natural for withd

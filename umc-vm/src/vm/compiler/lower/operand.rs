@@ -1,7 +1,7 @@
 //! How register types map onto frame slots and immediates
 
 use umc_model::RegWidth;
-use umc_model::reg_model::{Reg, RegOrConstant, RegTypeT, UnsignedRegT};
+use umc_model::reg_model::{Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT};
 
 use super::Ctx;
 use crate::vm::compiler::CompileError;
@@ -28,12 +28,25 @@ impl JitReg for UnsignedRegT {
     }
 }
 
+impl JitReg for SignedRegT {
+    fn key(r: &Reg<Self>) -> SlotKey {
+        SlotKey::Signed {
+            index: r.index,
+            width: r.width,
+        }
+    }
+    fn imm_bits(c: &i64) -> u64 {
+        *c as u64
+    }
+}
+
 impl<E: Emitter> Ctx<E> {
     /// native op width for a declared register width
     pub(super) fn width(&self, bits: RegWidth) -> Result<OpWidth, CompileError> {
         match bits {
-            32 => Ok(OpWidth::W32),
-            64 => Ok(OpWidth::W64),
+            // relaxed semantics so that signed comparison functions ok
+            1..=32 => Ok(OpWidth::W32),
+            33..=64 => Ok(OpWidth::W64),
             _ => Err(self.unsupported("register width")),
         }
     }

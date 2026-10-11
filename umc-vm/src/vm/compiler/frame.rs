@@ -19,8 +19,9 @@ impl FrameSlot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SlotKey {
     Unsigned { index: RegIndex, width: RegWidth },
+    Signed { index: RegIndex, width: RegWidth },
     Instr { index: RegIndex },
-    // Signed, Float, etc.
+    // Float, Mem etc.
 }
 
 #[derive(Debug, Clone)]

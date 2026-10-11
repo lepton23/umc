@@ -107,7 +107,11 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
     match instr {
         Instruction::Nop => Ok(Flow::Next),
         Instruction::Mov(MovParams::UnsignedInt(dst, s)) => int::mov(cx, dst, s),
+        Instruction::Mov(MovParams::SignedInt(dst, s)) => int::mov(cx, dst, s),
         Instruction::Add(AddParams::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
+            int::binop(cx, AluOp::Add, dst, lhs, rhs)
+        }
+        Instruction::Add(AddParams::SignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
             int::binop(cx, AluOp::Add, dst, lhs, rhs)
         }
         Instruction::Sub(p) => num_op(cx, AluOp::Sub, p),
@@ -126,12 +130,26 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
                     args: ConsistentComparison::UnsignedCompare(lhs, rhs),
                 },
         } => int::compare(cx, cond, dst, lhs, rhs),
+        Instruction::Compare {
+            cond,
+            params:
+                CompareParams {
+                    dst,
+                    args: ConsistentComparison::SignedCompare(lhs, rhs),
+                },
+        } => int::compare(cx, cond, dst, lhs, rhs),
         Instruction::Jmp(RegOrConstant::Const(target)) => control::jmp(cx, *target),
         Instruction::Jal(RegOrConstant::Const(target), link) => control::jal(cx, *target, link),
         Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
             control::branch_zero(cx, CmpCond::Eq, *target, op)
         }
+        Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Signed(op)) => {
+            control::branch_zero(cx, CmpCond::Eq, *target, op)
+        }
         Instruction::Bnz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
+            control::branch_zero(cx, CmpCond::Ne, *target, op)
+        }
+        Instruction::Bnz(RegOrConstant::Const(target), CompareToZero::Signed(op)) => {
             control::branch_zero(cx, CmpCond::Ne, *target, op)
         }
         // Alloc, Free, Load, Store, SizeOf, Cast, ECall not lowered yet
@@ -148,6 +166,9 @@ fn num_op<E: Emitter>(
 ) -> Result<Flow, CompileError> {
     match p {
         AnyConsistentNumOp::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs)) => {
+            int::binop(cx, op, dst, lhs, rhs)
+        }
+        AnyConsistentNumOp::SignedInt(ConsistentOp::Single(dst, lhs, rhs)) => {
             int::binop(cx, op, dst, lhs, rhs)
         }
         _ => not_lowered(cx),
