@@ -1,7 +1,7 @@
 //! How register types map onto frame slots and immediates
 
 use umc_model::RegWidth;
-use umc_model::reg_model::{Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT};
+use umc_model::reg_model::{FloatRegT, Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT};
 
 use super::Ctx;
 use crate::vm::compiler::CompileError;
@@ -48,7 +48,7 @@ impl JitReg for FloatRegT {
         }
     }
     fn imm_bits(c: &f64) -> u64 {
-        *c.to_bits()
+        c.to_bits()
     }
 }
 

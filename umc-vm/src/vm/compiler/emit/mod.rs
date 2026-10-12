@@ -13,6 +13,12 @@ pub enum Tmp {
     T2,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FTmp {
+    F0,
+    F1,
+    F2,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpWidth {
     W32,
     W64,
@@ -32,6 +38,13 @@ pub enum AluOp {
     And,
     Or,
     Xor,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FAluOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
@@ -120,6 +133,17 @@ pub trait IntEmitter {
     );
 }
 
+pub trait FloatEmitter {
+    fn fload_slot(&mut self, dst: FTmp, slot: FrameSlot, w: OpWidth);
+    fn fstore_slot(&mut self, slot: FrameSlot, src: FTmp, w: OpWidth);
+
+    // raw IEEE bits, f32 in low 32
+    fn fmov_imm(&mut self, dst: FTmp, bits: u64, w: OpWidth);
+    // dst = dst op rhs
+    fn falu(&mut self, op: FAluOp, dst: FTmp, rhs: FTmp, w: OpWidth);
+    fn fset_cmp(&mut self, dst: Tmp, cond: CmpCond, lhs: FTmp, rhs: FTmp, w: OpWidth);
+}
+
 /// everything lowering needs from backend
-pub trait Emitter: CoreEmitter + IntEmitter {}
-impl<T: CoreEmitter + IntEmitter> Emitter for T {}
+pub trait Emitter: CoreEmitter + IntEmitter + FloatEmitter {}
+impl<T: CoreEmitter + IntEmitter + FloatEmitter> Emitter for T {}

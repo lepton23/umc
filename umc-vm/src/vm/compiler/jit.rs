@@ -93,11 +93,13 @@ impl<E: Emitter> Compiler for Jit<E> {
 mod tests {
     use super::*;
     use crate::vm::compiler::CompileError;
-    use crate::vm::helper::{read_iaddr, read_uint};
+    use crate::vm::helper::{read_float, read_iaddr, read_uint};
+    use crate::vm::state::StorePrim;
+    use crate::vm::types::CastSingleFloat;
     use crate::vm::widths::uint::UIntWidth;
     use umc_compiler::error_display::assemble_prog;
-    use umc_model::instructions::{AnyConsistentNumOp, ConsistentOp};
-    use umc_model::reg_model::{InstrRegT, Reg, RegOrConstant, UnsignedRegT};
+    use umc_model::instructions::{AddParams, AnyConsistentNumOp, ConsistentOp};
+    use umc_model::reg_model::{FloatRegT, InstrRegT, Reg, RegOrConstant, UnsignedRegT};
     use umc_model::{RegIndex, RegWidth};
 
     fn unsigned(index: RegIndex, width: RegWidth) -> Reg<UnsignedRegT> {
@@ -126,22 +128,60 @@ mod tests {
         program: &[Instruction],
         regs: &[(Reg<UnsignedRegT>, u64)],
     ) -> (BlockExit, RegState<SafeAddress>) {
+        run_on(program, |state| {
+            for &(reg, v) in regs {
+                UIntWidth::store_u64(reg, state, v);
+            }
+        })
+    }
+
+    // compile at pc 0, run once on a state built by setup
+    fn run_on(
+        program: &[Instruction],
+        setup: impl FnOnce(&mut RegState<SafeAddress>),
+    ) -> (BlockExit, RegState<SafeAddress>) {
         let mut jit = NativeJit::new();
         let request = jit.compile_block(program, 0).unwrap();
         let mut state = RegState::new();
-        for &(reg, v) in regs {
-            UIntWidth::store_u64(reg, &mut state, v);
-        }
+        setup(&mut state);
         let exit = jit.execute_block(&request.block, &mut state, 0).unwrap();
         (exit, state)
     }
 
     fn compile_err(src: &str) -> CompileError {
-        let prog = assemble_prog(src).unwrap();
-        match NativeJit::new().compile_block(&prog.instructions, 0) {
+        compile_err_instrs(&assemble_prog(src).unwrap().instructions)
+    }
+
+    fn compile_err_instrs(program: &[Instruction]) -> CompileError {
+        match NativeJit::new().compile_block(program, 0) {
             Ok(_) => panic!("expected compile error"),
             Err(e) => e,
         }
+    }
+
+    fn f64_reg(index: RegIndex) -> Reg<FloatRegT> {
+        Reg { index, width: 64 }
+    }
+
+    fn f32_reg(index: RegIndex) -> Reg<FloatRegT> {
+        Reg { index, width: 32 }
+    }
+
+    // compile block at pc 0, run it once with given f64 regs set
+    fn run_f64(src: &str, regs: &[(RegIndex, f64)]) -> (BlockExit, RegState<SafeAddress>) {
+        run_on(&assemble_prog(src).unwrap().instructions, |state| {
+            for &(i, v) in regs {
+                state.store_prim(f64_reg(i), v);
+            }
+        })
+    }
+
+    fn readf<T: CastSingleFloat>(state: &RegState<SafeAddress>, r: Reg<FloatRegT>) -> T {
+        read_float(&RegOrConstant::Reg(r), state)
+    }
+
+    fn getf(state: &RegState<SafeAddress>, index: RegIndex) -> f64 {
+        readf(state, f64_reg(index))
     }
 
     fn read(state: &RegState<SafeAddress>, reg: Reg<UnsignedRegT>) -> u64 {
@@ -233,5 +273,77 @@ mod tests {
             matches!(e, CompileError::Unsupported { pc: 0, .. }),
             "{e:?}"
         );
+    }
+
+    #[test]
+    fn float_arith_f64() {
+        const PROG: &str = "
+            add f64:2, f64:0, f64:1
+            sub f64:3, f64:0, f64:1
+            mul f64:4, f64:0, f64:1
+            div f64:5, f64:0, f64:1
+            mod f64:6, f64:0, f64:1
+            add f64:7, f64:0, #0.25
+        ";
+        let (exit, state) = run_f64(PROG, &[(0, -7.5), (1, 2.0)]);
+        assert_eq!(exit, BlockExit::Goto(6));
+        let got: Vec<f64> = (2..=7).map(|i| getf(&state, i)).collect();
+        assert_eq!(got, [-5.5, -9.5, -15.0, -3.75, (-7.5f64).rem_euclid(2.0), -7.25]);
+    }
+
+    #[test]
+    fn float_f32_narrows_constants_and_mods() {
+        let prog = assemble_prog("add f32:1, f32:0, #0.1\nmod f32:2, f32:0, #2.0\n").unwrap();
+        let (_, state) = run_on(&prog.instructions, |s| s.store_prim(f32_reg(0), -7.5f32));
+        assert_eq!(readf::<f32>(&state, f32_reg(1)), -7.5f32 + 0.1f64 as f32);
+        assert_eq!(readf::<f32>(&state, f32_reg(2)), (-7.5f32).rem_euclid(2.0));
+    }
+
+    #[test]
+    fn float_mov_turns_neg_zero_positive() {
+        let (_, state) = run_f64("mov f64:1, f64:0\n", &[(0, -0.0)]);
+        assert_eq!(getf(&state, 1).to_bits(), 0.0f64.to_bits());
+    }
+
+    #[test]
+    fn float_div_by_zero_is_inf() {
+        let (exit, state) = run_f64("div f64:1, f64:0, #0.0\n", &[(0, 1.0)]);
+        assert_eq!(exit, BlockExit::Goto(1));
+        assert_eq!(getf(&state, 1), f64::INFINITY);
+    }
+
+    #[test]
+    fn float_compare() {
+        const PROG: &str = "
+            seq u64:2, f64:0, f64:1
+            sgt u64:3, f64:0, f64:1
+            sge u64:4, f64:0, f64:1
+            slt u64:5, f64:0, f64:1
+            sle u64:6, f64:0, f64:1
+        ";
+        let flags = |a, b| {
+            let (_, state) = run_f64(PROG, &[(0, a), (1, b)]);
+            (2..=6).map(|i| get(&state, i)).collect::<Vec<_>>()
+        };
+        assert_eq!(flags(1.0, 2.0), [0, 0, 0, 1, 1]);
+        assert_eq!(flags(1.0, f64::NAN), [0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn float_bitwise_and_mixed_widths_are_unsupported() {
+        let and = Instruction::And(AnyConsistentNumOp::Float(ConsistentOp::Single(
+            f64_reg(0),
+            RegOrConstant::Reg(f64_reg(1)),
+            RegOrConstant::Const(1.0),
+        )));
+        let mixed = Instruction::Add(AddParams::Float(ConsistentOp::Single(
+            f64_reg(0),
+            RegOrConstant::Reg(f32_reg(1)),
+            RegOrConstant::Const(1.0),
+        )));
+        for instr in [and, mixed] {
+            let e = compile_err_instrs(&[instr]);
+            assert!(matches!(e, CompileError::Unsupported { pc: 0, .. }), "{e:?}");
+        }
     }
 }

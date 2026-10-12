@@ -3,6 +3,7 @@
 
 mod control;
 mod debug;
+mod float;
 mod int;
 mod operand;
 
@@ -108,11 +109,15 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         Instruction::Nop => Ok(Flow::Next),
         Instruction::Mov(MovParams::UnsignedInt(dst, s)) => int::mov(cx, dst, s),
         Instruction::Mov(MovParams::SignedInt(dst, s)) => int::mov(cx, dst, s),
+        Instruction::Mov(MovParams::Float(dst, s)) => float::mov(cx, dst, s),
         Instruction::Add(AddParams::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
             int::binop(cx, AluOp::Add, dst, lhs, rhs)
         }
         Instruction::Add(AddParams::SignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
             int::binop(cx, AluOp::Add, dst, lhs, rhs)
+        }
+        Instruction::Add(AddParams::Float(ConsistentOp::Single(dst, lhs, rhs))) => {
+            float::binop(cx, AluOp::Add, dst, lhs, rhs)
         }
         Instruction::Sub(p) => num_op(cx, AluOp::Sub, p),
         Instruction::Mul(p) => num_op(cx, AluOp::Mul, p),
@@ -138,6 +143,14 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
                     args: ConsistentComparison::SignedCompare(lhs, rhs),
                 },
         } => int::compare(cx, cond, dst, lhs, rhs),
+        Instruction::Compare {
+            cond,
+            params:
+                CompareParams {
+                    dst,
+                    args: ConsistentComparison::FloatCompare(lhs, rhs),
+                },
+        } => float::compare(cx, cond, dst, lhs, rhs),
         Instruction::Jmp(RegOrConstant::Const(target)) => control::jmp(cx, *target),
         Instruction::Jal(RegOrConstant::Const(target), link) => control::jal(cx, *target, link),
         Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
@@ -170,6 +183,9 @@ fn num_op<E: Emitter>(
         }
         AnyConsistentNumOp::SignedInt(ConsistentOp::Single(dst, lhs, rhs)) => {
             int::binop(cx, op, dst, lhs, rhs)
+        }
+        AnyConsistentNumOp::Float(ConsistentOp::Single(dst, lhs, rhs)) => {
+            float::binop(cx, op, dst, lhs, rhs)
         }
         _ => not_lowered(cx),
     }

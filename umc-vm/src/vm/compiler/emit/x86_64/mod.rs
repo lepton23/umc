@@ -1,5 +1,6 @@
 use crate::vm::compiler::emit::*;
 
+mod float;
 mod int;
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,14 @@ pub(super) fn reg8(t: Tmp) -> AsmRegister8 {
         Tmp::T0 => al,
         Tmp::T1 => cl,
         Tmp::T2 => dl,
+    }
+}
+
+pub(super) fn xmm(t: FTmp) -> AsmRegisterXmm {
+    match t {
+        FTmp::F0 => xmm0,
+        FTmp::F1 => xmm1,
+        FTmp::F2 => xmm2,
     }
 }
 

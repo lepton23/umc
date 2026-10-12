@@ -27,7 +27,6 @@ impl JitEngine {
     ) -> Option<BlockExit> {
         // Blacklisted blocks should be interpreted
         if self.blacklist.contains(&pc) {
-            println!("Interpreting blacklisted block at pc: {pc}");
             return None;
         }
         // COLD
@@ -47,11 +46,11 @@ impl JitEngine {
             };
         }
         // HOT & COMPILED
-        println!("Executing compiled block at pc: {pc}");
         match self.jit.execute_block(self.blocks.get(&pc)?, state, pc) {
             Ok(exit) => return Some(exit),
             Err(_) => {
                 self.blacklist.insert(pc);
+                println!("Failed execution of compiled block, blacklisting...");
                 return None;
             }
         }
