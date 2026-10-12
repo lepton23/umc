@@ -16,9 +16,9 @@ pub(super) fn dbg_unsigned<E: Emitter>(
     cx.e.call_host(
         jit_dbg_unsigned as *const () as usize,
         &[
-            Src::Tmp(Tmp::T0),
-            Src::Imm(r.index as u64),
-            Src::Imm(r.width as u64),
+            Arg::Tmp(Tmp::T0),
+            Arg::Imm(r.index as u64),
+            Arg::Imm(r.width as u64),
         ],
     );
     Ok(Flow::Next)

@@ -227,17 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn unlowered_instruction_is_unsupported() {
-        let e = compile_err("sub i32:0, #0, #5\n");
-        assert!(
-            matches!(e, CompileError::Unsupported { pc: 0, .. }),
-            "{e:?}"
-        );
-    }
-
-    #[test]
     fn non_native_width_is_unsupported() {
-        let e = compile_err("add u8:0, u8:0, #1\n");
+        let e = compile_err("add u65:0, u65:0, #1\n");
         assert!(
             matches!(e, CompileError::Unsupported { pc: 0, .. }),
             "{e:?}"

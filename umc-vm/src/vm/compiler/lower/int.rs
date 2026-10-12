@@ -133,22 +133,15 @@ pub(super) fn compare<E: Emitter, RT: JitInt>(
     lhs: &RegOrConstant<RT>,
     rhs: &RegOrConstant<RT>,
 ) -> Result<Flow, CompileError> {
-    // compares at dst width, so a u1 dst is rejected even when operands are native widths
-    let w = lhs
-        .width()
-        .or(rhs.width())
-        .ok_or(CompileError::Emit(EmitError::Asm(
-            "couldn't get width for signed comparison".to_string(),
-        )))?;
-    let w = cx.width(w)?;
+    let w = cx.width(lhs.width().or(rhs.width()).unwrap_or(64))?;
     cx.load(lhs, Tmp::T1, w);
     let rhs = cx.src(rhs, Tmp::T2, w);
     cx.e.set_cmp(Tmp::T0, cmp_cond(cond), Tmp::T1, rhs, w, RT::SIGNEDNESS);
-    write_result(cx, dst, w);
+    store_flag(cx, dst)?;
     Ok(Flow::Next)
 }
 
-fn cmp_cond(cond: &BinaryCondition) -> CmpCond {
+pub(super) fn cmp_cond(cond: &BinaryCondition) -> CmpCond {
     match cond {
         BinaryCondition::Equal => CmpCond::Eq,
         BinaryCondition::GreaterThan => CmpCond::Gt,
@@ -156,4 +149,15 @@ fn cmp_cond(cond: &BinaryCondition) -> CmpCond {
         BinaryCondition::LessThan => CmpCond::Lt,
         BinaryCondition::LessThanOrEqualTo => CmpCond::Le,
     }
+}
+
+/// compare result (0 / 1 in T0) into unsigned dst of any native width
+/// setcc + movzx already cleare dupper bits of T0
+pub(super) fn store_flag<E: Emitter>(
+    cx: &mut Ctx<E>,
+    dst: &Reg<UnsignedRegT>,
+) -> Result<Flow, CompileError> {
+    let w = cx.width(dst.width)?;
+    cx.store(dst, Tmp::T0, w);
+    Ok(Flow::Next)
 }

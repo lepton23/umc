@@ -20,8 +20,9 @@ impl FrameSlot {
 pub enum SlotKey {
     Unsigned { index: RegIndex, width: RegWidth },
     Signed { index: RegIndex, width: RegWidth },
+    Float { index: RegIndex, width: RegWidth }, // raw IEEE bits, f32 in low 32
     Instr { index: RegIndex },
-    // Float, Mem etc.
+    // Mem
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,7 @@
 use umc_model::reg_model::*;
 
 use crate::vm::compiler::frame::{FrameLayout, SlotKey};
-use crate::vm::state::StoreFor;
+use crate::vm::state::{StoreFor, StorePrim};
 use crate::vm::types::address::InstructionAddress;
 use crate::vm::widths::int::IntWidth;
 use crate::vm::widths::uint::UIntWidth;
@@ -36,6 +36,13 @@ impl FrameBuffer {
                     let op = RegOrConstant::Reg(Reg::<SignedRegT> { index, width });
                     helper::read_int::<i64, _>(&op, state) as u64
                 }
+                SlotKey::Float { index, width } => {
+                    let op = RegOrConstant::Reg(Reg::<FloatRegT> { index, width });
+                    match width {
+                        32 => helper::read_float::<f32>(&op, state).to_bits() as u64,
+                        _ => helper::read_float::<f64>(&op, state).to_bits(),
+                    }
+                }
                 SlotKey::Instr { index } => {
                     let op = RegOrConstant::Reg(Reg::<InstrRegT> {
                         index,
@@ -58,6 +65,13 @@ impl FrameBuffer {
                 SlotKey::Signed { index, width } => {
                     let reg = Reg::<SignedRegT> { index, width };
                     IntWidth::store_i64(reg, state, self.slots[i] as i64);
+                }
+                SlotKey::Float { index, width } => {
+                    let reg = Reg::<FloatRegT> { index, width };
+                    match width {
+                        32 => state.store_prim(reg, f32::from_bits(self.slots[i] as u32)),
+                        _ => state.store_prim(reg, f64::from_bits(self.slots[i])),
+                    }
                 }
                 SlotKey::Instr { index } => {
                     let reg = Reg::<InstrRegT> {
@@ -82,4 +96,14 @@ pub extern "C" fn jit_dbg_unsigned(value: u64, index: u64, width: u64) {
         width: width as _,
     };
     println!("{} = 0x{:X}", reg, value);
+}
+
+pub extern "C" fn jit_frem_f64(a: u64, b: u64) -> u64 {
+    f64::from_bits(a).rem_euclid(f64::from_bits(b)).to_bits()
+}
+
+pub extern "C" fn jit_frem_f32(a: u64, b: u64) -> u64 {
+    f32::from_bits(a as u32)
+        .rem_euclid(f32::from_bits(b as u32))
+        .to_bits() as u64
 }

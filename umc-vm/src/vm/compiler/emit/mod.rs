@@ -64,7 +64,15 @@ pub enum EmitError {
     Asm(String), // for Iced errors that don't map easily
 }
 
-pub trait Emitter: Sized {
+// argument to host call
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arg {
+    Tmp(Tmp),
+    Imm(u64),
+}
+
+/// block structure, ABI, host calls
+pub trait CoreEmitter: Sized {
     const ARCH: &'static str;
     fn new() -> Self;
 
@@ -75,8 +83,16 @@ pub trait Emitter: Sized {
     fn prologue(&mut self, layout: &FrameLayout);
     fn ret_exit(&mut self, exit_id: u32);
 
-    fn call_host(&mut self, f: usize, args: &[Src]);
+    // call extern "C" fn at f, integer retrun lands in T0
+    fn call_host(&mut self, f: usize, args: &[Arg]);
 
+    fn jump(&mut self, target: Label);
+
+    fn finish(self) -> Result<Vec<u8>, EmitError>;
+}
+
+/// integer slots, alu, cmps on Tmp
+pub trait IntEmitter {
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth);
     fn store_slot(&mut self, slot: FrameSlot, src: Tmp, w: OpWidth);
 
@@ -102,7 +118,8 @@ pub trait Emitter: Sized {
         s: Signedness,
         target: Label,
     );
-    fn jump(&mut self, target: Label);
-
-    fn finish(self) -> Result<Vec<u8>, EmitError>;
 }
+
+/// everything lowering needs from backend
+pub trait Emitter: CoreEmitter + IntEmitter {}
+impl<T: CoreEmitter + IntEmitter> Emitter for T {}

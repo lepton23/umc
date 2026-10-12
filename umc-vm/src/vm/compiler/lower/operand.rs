@@ -40,6 +40,18 @@ impl JitReg for SignedRegT {
     }
 }
 
+impl JitReg for FloatRegT {
+    fn key(r: &Reg<Self>) -> SlotKey {
+        SlotKey::Float {
+            index: r.index,
+            width: r.width,
+        }
+    }
+    fn imm_bits(c: &f64) -> u64 {
+        *c.to_bits()
+    }
+}
+
 impl<E: Emitter> Ctx<E> {
     /// native op width for a declared register width
     pub(super) fn width(&self, bits: RegWidth) -> Result<OpWidth, CompileError> {
