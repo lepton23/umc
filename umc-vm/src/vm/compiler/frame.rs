@@ -22,7 +22,17 @@ pub enum SlotKey {
     Signed { index: RegIndex, width: RegWidth },
     Float { index: RegIndex, width: RegWidth }, // raw IEEE bits, f32 in low 32
     Instr { index: RegIndex },
-    // Mem
+    MemBlock { index: RegIndex },
+    MemOffset { index: RegIndex },
+    ConstBlock { label: u32 },
+    ConstOffset { label: u32 },
+}
+
+// memory address operand: register or pre-inisitalised label
+#[derive(Debug, Clone, Copy)]
+pub enum MemKey {
+    Reg(RegIndex),
+    Const(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +81,32 @@ impl FrameLayout {
         let (slot, info) = self.slot_for(key, false);
         info.dirty = true;
         slot
+    }
+
+    // address = block slot then offset slot, both keys only ever allocated here so stay adjacent
+    // returns block slot
+    fn mem_pair(&mut self, key: MemKey, write: bool) -> FrameSlot {
+        let (b, o) = match key {
+            MemKey::Reg(index) => (SlotKey::MemBlock { index }, SlotKey::MemOffset { index }),
+            MemKey::Const(label) => (
+                SlotKey::ConstBlock { label },
+                SlotKey::ConstOffset { label },
+            ),
+        };
+        let (bs, os) = if write {
+            (self.write_slot(b), self.write_slot(o))
+        } else {
+            (self.read_slot(b), self.read_slot(o))
+        };
+        debug_assert_eq!(os.0, bs.0 + 1);
+        bs
+    }
+
+    pub fn mem_read_slot(&mut self, key: MemKey) -> FrameSlot {
+        self.mem_pair(key, false)
+    }
+    pub fn mem_write_slot(&mut self, index: RegIndex) -> FrameSlot {
+        self.mem_pair(MemKey::Reg(index), true)
     }
 }
 

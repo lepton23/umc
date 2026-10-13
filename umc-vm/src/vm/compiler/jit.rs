@@ -4,8 +4,10 @@ use crate::vm::compiler::{
     BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler, ExecuteError,
     ExitTo, bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
 };
+use crate::vm::memory::safe::SafeMemoryManager;
 use crate::vm::{RegState, SafeAddress};
 
+use std::ffi::c_void;
 use std::marker::PhantomData;
 use umc_model::instructions::Instruction;
 
@@ -65,10 +67,12 @@ impl<E: Emitter> Compiler for Jit<E> {
         &mut self,
         block: &CompiledBlock,
         state: &mut RegState<SafeAddress>,
+        memory: &mut SafeMemoryManager,
+        constants: &[SafeAddress],
         entry_pc: usize,
     ) -> Result<BlockExit, ExecuteError> {
         // load register states into frame layout
-        self.frame.prepare(&block.layout, state);
+        self.frame.prepare(&block.layout, state, constants);
 
         // convert page into CompiledFn
         let f = unsafe { block.page.as_fn() };
@@ -76,7 +80,7 @@ impl<E: Emitter> Compiler for Jit<E> {
         let frame_ptr = self.frame.as_mut_ptr();
 
         // Execute compiled code
-        let exit_id = unsafe { f(frame_ptr) };
+        let exit_id = unsafe { f(frame_ptr, memory as *mut _ as *mut c_void) };
 
         // spill results from frame back into register state
         self.frame.commit(&block.layout, state);
@@ -144,8 +148,11 @@ mod tests {
         let mut jit = NativeJit::new();
         let request = jit.compile_block(program, 0).unwrap();
         let mut state = RegState::new();
+        let mut memory = SafeMemoryManager::new();
         setup(&mut state);
-        let exit = jit.execute_block(&request.block, &mut state, 0).unwrap();
+        let exit = jit
+            .execute_block(&request.block, &mut state, &mut memory, &[], 0)
+            .unwrap();
         (exit, state)
     }
 

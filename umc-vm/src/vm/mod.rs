@@ -142,7 +142,13 @@ impl VirtualMachine {
 
     #[cfg(feature = "jit")]
     fn try_run_jit(&mut self) -> Option<BlockExit> {
-        self.jit.try_run(self.pc, &self.program, &mut self.state)
+        self.jit.try_run(
+            self.pc,
+            &self.program,
+            &mut self.state,
+            &mut self.memory,
+            &self.memory_constants,
+        )
     }
 
     fn execute_step(&mut self) {

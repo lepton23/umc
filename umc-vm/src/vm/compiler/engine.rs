@@ -2,7 +2,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::vm::{
     compiler::{BlockExit, CompiledBlock, Compiler, jit::*},
-    memory::safe::SafeAddress,
+    memory::safe::{SafeAddress, SafeMemoryManager},
     state::RegState,
 };
 use umc_model::instructions::Instruction;
@@ -24,6 +24,8 @@ impl JitEngine {
         pc: usize,
         program: &[Instruction],
         state: &mut RegState<SafeAddress>,
+        memory: &mut SafeMemoryManager,
+        constants: &[SafeAddress],
     ) -> Option<BlockExit> {
         // Blacklisted blocks should be interpreted
         if self.blacklist.contains(&pc) {
@@ -46,7 +48,10 @@ impl JitEngine {
             };
         }
         // HOT & COMPILED
-        match self.jit.execute_block(self.blocks.get(&pc)?, state, pc) {
+        match self
+            .jit
+            .execute_block(self.blocks.get(&pc)?, state, memory, constants, pc)
+        {
             Ok(exit) => return Some(exit),
             Err(_) => {
                 self.blacklist.insert(pc);

@@ -11,6 +11,7 @@ pub mod jit;
 mod lower;
 
 use crate::vm::compiler::frame::SlotInfo;
+use crate::vm::memory::safe::SafeMemoryManager;
 use crate::vm::{RegState, SafeAddress};
 
 use crate::vm::compiler::{
@@ -87,6 +88,8 @@ pub trait Compiler {
         &mut self,
         block: &CompiledBlock,
         state: &mut RegState<SafeAddress>,
+        memory: &mut SafeMemoryManager,
+        constants: &[SafeAddress],
         entry_pc: usize,
     ) -> Result<BlockExit, ExecuteError>;
 }

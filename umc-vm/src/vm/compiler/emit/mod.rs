@@ -82,6 +82,8 @@ pub enum EmitError {
 pub enum Arg {
     Tmp(Tmp),
     Imm(u64),
+    Frame, // frame base
+    Mem,   // memory manager passed to block
 }
 
 /// block structure, ABI, host calls

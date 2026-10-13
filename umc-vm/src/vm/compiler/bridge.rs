@@ -1,3 +1,5 @@
+use std::ffi::c_void;
+
 use umc_model::reg_model::*;
 
 use crate::vm::compiler::frame::{FrameLayout, FrameSlot, SlotKey};
@@ -7,7 +9,9 @@ use crate::vm::widths::int::IntWidth;
 use crate::vm::widths::uint::UIntWidth;
 use crate::vm::{RegState, SafeAddress, helper};
 
-pub type CompiledFn = unsafe extern "C" fn(frame: *mut u64) -> u32;
+pub type CompiledFn = unsafe extern "C" fn(frame: *mut u64, mem: *mut c_void) -> u32;
+
+pub(crate) const NULL_BLOCK: u64 = u64::MAX; // SafeAddress::NULL block id
 
 pub struct FrameBuffer {
     slots: Vec<u64>,
@@ -22,7 +26,12 @@ impl FrameBuffer {
     /// i.e. u64:0 = 3, u64:1 = 0, u64:2 = 1 turns into [3, 0, 1] in framebuffer.slots
     /// every slot is read, not just live-in ones: commit writes back every slot, and a block that
     /// exits early (BlockExit::Interpret) must leave registers it didn't reach yet unchanged
-    pub fn prepare(&mut self, layout: &FrameLayout, state: &RegState<SafeAddress>) {
+    pub fn prepare(
+        &mut self,
+        layout: &FrameLayout,
+        state: &RegState<SafeAddress>,
+        constants: &[SafeAddress],
+    ) {
         self.slots.clear();
         self.slots.extend(layout.slots.iter().map(|info| {
             match info.key {
@@ -50,6 +59,18 @@ impl FrameBuffer {
                     });
                     helper::read_iaddr(&op, state).pc() as u64
                 }
+                SlotKey::MemBlock { index } => state
+                    .read(Reg::<MemRegT>::from_index(index))
+                    .map_or(NULL_BLOCK, |a| a.block_id() as u64),
+                SlotKey::MemOffset { index } => state
+                    .read(Reg::<MemRegT>::from_index(index))
+                    .map_or(0, |a| a.byte_offset() as u64),
+                SlotKey::ConstBlock { label } => constants
+                    .get(label as usize)
+                    .map_or(NULL_BLOCK, |a| a.block_id() as u64),
+                SlotKey::ConstOffset { label } => constants
+                    .get(label as usize)
+                    .map_or(0, |a| a.byte_offset() as u64),
             }
         }));
     }
@@ -80,6 +101,19 @@ impl FrameBuffer {
                     };
                     state.store(reg, InstructionAddress::new(self.slots[i] as usize));
                 }
+                SlotKey::MemBlock { index } => {
+                    // unset stays unset, interpreter never stores null adddres
+                    let block = self.slots[i];
+                    if block != NULL_BLOCK {
+                        let addr =
+                            SafeAddress::from_parts(block as usize, self.slots[i + 1] as usize);
+                        state.store(Reg::<MemRegT>::from_index(index), addr);
+                    }
+                }
+                // written together with memblock, constants are read only
+                SlotKey::MemOffset { .. }
+                | SlotKey::ConstBlock { .. }
+                | SlotKey::ConstOffset { .. } => {}
             }
         }
     }

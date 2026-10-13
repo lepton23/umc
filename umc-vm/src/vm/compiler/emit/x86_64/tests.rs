@@ -200,11 +200,11 @@ fn emitted_block_runs_on_frame() {
     let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
 
     let mut frame = [10u64, 3, 0];
-    let exit = unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
     assert_eq!((exit, frame), (1, [10, 3, 7]));
 
     let mut frame = [3u64, 10, 0];
-    let exit = unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
     assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
 }
 
@@ -228,7 +228,7 @@ fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
     }
     e.ret_exit(0);
     let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-    unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn div_mod_divisor_aliasing_rax_or_rdx() {
     let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
 
     let mut frame = [100u64, 3, 0, 0];
-    unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
     assert_eq!(frame, [100, 3, 33, 1]);
 }
 
@@ -320,6 +320,6 @@ fn call_host_stages_tmp_args() {
     e.ret_exit(0);
     let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
     let mut frame = [10u64, 3, 0];
-    unsafe { page.as_fn()(frame.as_mut_ptr()) };
+    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
     assert_eq!(frame[2], 3u64.wrapping_sub(10));
 }
