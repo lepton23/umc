@@ -2,7 +2,7 @@ use crate::vm::compiler::block::scan;
 use crate::vm::compiler::lower::lower_block;
 use crate::vm::compiler::{
     BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler, ExecuteError,
-    bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
+    ExitTo, bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
 };
 use crate::vm::{RegState, SafeAddress};
 
@@ -83,7 +83,8 @@ impl<E: Emitter> Compiler for Jit<E> {
 
         // exit_id indexes into block.exits to give where to continue
         match block.exits.get(exit_id as usize) {
-            Some(exit) => Ok(*exit),
+            Some(ExitTo::Static(exit)) => Ok(*exit),
+            Some(ExitTo::Slot(slot)) => Ok(BlockExit::Goto(self.frame.get(*slot) as usize)),
             None => Err(ExecuteError::BadExit { entry_pc, exit_id }),
         }
     }
@@ -288,7 +289,10 @@ mod tests {
         let (exit, state) = run_f64(PROG, &[(0, -7.5), (1, 2.0)]);
         assert_eq!(exit, BlockExit::Goto(6));
         let got: Vec<f64> = (2..=7).map(|i| getf(&state, i)).collect();
-        assert_eq!(got, [-5.5, -9.5, -15.0, -3.75, (-7.5f64).rem_euclid(2.0), -7.25]);
+        assert_eq!(
+            got,
+            [-5.5, -9.5, -15.0, -3.75, (-7.5f64).rem_euclid(2.0), -7.25]
+        );
     }
 
     #[test]
@@ -343,7 +347,10 @@ mod tests {
         )));
         for instr in [and, mixed] {
             let e = compile_err_instrs(&[instr]);
-            assert!(matches!(e, CompileError::Unsupported { pc: 0, .. }), "{e:?}");
+            assert!(
+                matches!(e, CompileError::Unsupported { pc: 0, .. }),
+                "{e:?}"
+            );
         }
     }
 }

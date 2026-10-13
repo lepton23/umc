@@ -1,6 +1,7 @@
 //! Lowers a basic block of UMC instructions to native code through an Emitter
 //! Each instruction family has its own file, this one drives the block and dispatches
 
+mod address;
 mod control;
 mod debug;
 mod float;
@@ -10,15 +11,15 @@ mod operand;
 use std::ops::Range;
 
 use umc_model::instructions::*;
-use umc_model::reg_model::RegOrConstant;
 
-use crate::vm::compiler::emit::*;
+use crate::vm::compiler::frame::FrameSlot;
 use crate::vm::compiler::{BlockExit, CompileError, frame::FrameLayout};
+use crate::vm::compiler::{ExitTo, emit::*};
 
 pub(crate) struct Lowered {
     pub code: Vec<u8>,
     pub layout: FrameLayout,
-    pub exits: Vec<BlockExit>,
+    pub exits: Vec<ExitTo>,
 }
 
 /// whether the block carries on after an instruction
@@ -31,7 +32,7 @@ enum Flow {
 struct Ctx<E: Emitter> {
     e: E,
     layout: FrameLayout,
-    exits: Vec<BlockExit>,
+    exits: Vec<ExitTo>,
     // out-of-line BlockExit::Interpret stubs, emitted after main code
     bails: Vec<(Label, usize)>,
     // instruction currently being lowered
@@ -51,6 +52,15 @@ impl<E: Emitter> Ctx<E> {
 
     /// return from compiled code, continuing at `to`
     fn exit(&mut self, to: BlockExit) {
+        self.ret(ExitTo::Static(to));
+    }
+
+    /// return from compiled code, continuing at pc in slot
+    fn exit_slot(&mut self, slot: FrameSlot) {
+        self.ret(ExitTo::Slot(slot));
+    }
+
+    fn ret(&mut self, to: ExitTo) {
         self.exits.push(to);
         self.e.ret_exit((self.exits.len() - 1) as u32);
     }
@@ -110,6 +120,7 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         Instruction::Mov(MovParams::UnsignedInt(dst, s)) => int::mov(cx, dst, s),
         Instruction::Mov(MovParams::SignedInt(dst, s)) => int::mov(cx, dst, s),
         Instruction::Mov(MovParams::Float(dst, s)) => float::mov(cx, dst, s),
+        Instruction::Mov(MovParams::InstrAddress(dst, s)) => address::mov_iaddr(cx, dst, s),
         Instruction::Add(AddParams::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
             int::binop(cx, AluOp::Add, dst, lhs, rhs)
         }
@@ -118,6 +129,9 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         }
         Instruction::Add(AddParams::Float(ConsistentOp::Single(dst, lhs, rhs))) => {
             float::binop(cx, AluOp::Add, dst, lhs, rhs)
+        }
+        Instruction::Add(AddParams::InstrAddress(dst, base, off)) => {
+            address::add_iaddr(cx, dst, base, off)
         }
         Instruction::Sub(p) => num_op(cx, AluOp::Sub, p),
         Instruction::Mul(p) => num_op(cx, AluOp::Mul, p),
@@ -151,23 +165,34 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
                     args: ConsistentComparison::FloatCompare(lhs, rhs),
                 },
         } => float::compare(cx, cond, dst, lhs, rhs),
-        Instruction::Jmp(RegOrConstant::Const(target)) => control::jmp(cx, *target),
-        Instruction::Jal(RegOrConstant::Const(target), link) => control::jal(cx, *target, link),
-        Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
-            control::branch_zero(cx, CmpCond::Eq, *target, op)
+        Instruction::Compare {
+            cond,
+            params:
+                CompareParams {
+                    dst,
+                    args: ConsistentComparison::InstrAddressCompare(lhs, rhs),
+                },
+        } => address::compare_iaddr(cx, cond, dst, lhs, rhs),
+        Instruction::Jmp(target) => control::jmp(cx, target),
+        Instruction::Jal(target, link) => control::jal(cx, target, link),
+        Instruction::Bz(target, CompareToZero::Unsigned(op)) => {
+            control::branch_zero(cx, CmpCond::Eq, target, op)
         }
-        Instruction::Bz(RegOrConstant::Const(target), CompareToZero::Signed(op)) => {
-            control::branch_zero(cx, CmpCond::Eq, *target, op)
+        Instruction::Bz(target, CompareToZero::Signed(op)) => {
+            control::branch_zero(cx, CmpCond::Eq, target, op)
         }
-        Instruction::Bnz(RegOrConstant::Const(target), CompareToZero::Unsigned(op)) => {
-            control::branch_zero(cx, CmpCond::Ne, *target, op)
+        Instruction::Bnz(target, CompareToZero::Unsigned(op)) => {
+            control::branch_zero(cx, CmpCond::Ne, target, op)
         }
-        Instruction::Bnz(RegOrConstant::Const(target), CompareToZero::Signed(op)) => {
-            control::branch_zero(cx, CmpCond::Ne, *target, op)
+        Instruction::Bnz(target, CompareToZero::Signed(op)) => {
+            control::branch_zero(cx, CmpCond::Ne, target, op)
         }
         // Alloc, Free, Load, Store, SizeOf, Cast, ECall not lowered yet
         Instruction::Dbg(AnyReg::Single(AnySingleReg::Unsigned(r))) => debug::dbg_unsigned(cx, r),
-        _ => not_lowered(cx),
+        _ => {
+            println!("{}", instr);
+            not_lowered(cx)
+        }
     }
 }
 

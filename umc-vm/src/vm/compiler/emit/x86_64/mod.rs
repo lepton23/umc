@@ -157,8 +157,9 @@ impl CoreEmitter for X86Emitter {
             let r = match (*a, from[i]) {
                 (_, Some(s)) => self.asm.mov(CALL_ARGS[i], s),
                 (Arg::Imm(v), None) => self.asm.mov(CALL_ARGS[i], v),
-                (Arg::Tmp(v), None) => unreachable!(),
+                (Arg::Tmp(_), None) => unreachable!(),
             };
+            record(&mut self.error, r);
         }
         // Win64 ABI requires 32 bytes of shadow space before calls so push then pop it after call
         // rsp is 16-aligned, 8 mod 16 on entry, plus prologues push rbx

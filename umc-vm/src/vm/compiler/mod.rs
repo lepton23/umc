@@ -48,12 +48,19 @@ pub enum BlockExit {
     Interpret(usize),
 }
 
+// how compiled exit picks next pc
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExitTo {
+    Static(BlockExit),
+    Slot(FrameSlot), // instr address in frame slot
+}
+
 pub struct CompiledBlock {
     entry_pc: usize,
     covered: Range<usize>,
     layout: FrameLayout,
-    exits: Vec<BlockExit>, // return val -> next pc
-    page: ExecPage,        // owns W^X pages
+    exits: Vec<ExitTo>, // return val -> next pc
+    page: ExecPage,     // owns W^X pages
 }
 
 pub struct CompiledRequest<'p> {

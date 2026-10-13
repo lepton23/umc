@@ -5,24 +5,37 @@ use umc_model::reg_model::{InstrRegT, Reg, RegOrConstant};
 use super::int::JitInt;
 use super::{Ctx, Flow};
 use crate::vm::compiler::emit::*;
-use crate::vm::compiler::frame::SlotKey;
+use crate::vm::compiler::lower::operand::JitReg;
 use crate::vm::compiler::{BlockExit, CompileError};
 
-pub(super) fn jmp<E: Emitter>(cx: &mut Ctx<E>, target: usize) -> Result<Flow, CompileError> {
-    cx.exit(BlockExit::Goto(target));
+fn exit_to<E: Emitter>(cx: &mut Ctx<E>, target: &RegOrConstant<InstrRegT>) {
+    match target {
+        RegOrConstant::Const(pc) => cx.exit(BlockExit::Goto(*pc)),
+        RegOrConstant::Reg(r) => {
+            let slot = cx.layout.read_slot(InstrRegT::key(r));
+            cx.exit_slot(slot);
+        }
+    }
+}
+
+pub(super) fn jmp<E: Emitter>(
+    cx: &mut Ctx<E>,
+    target: &RegOrConstant<InstrRegT>,
+) -> Result<Flow, CompileError> {
+    exit_to(cx, target);
     Ok(Flow::End)
 }
 
 /// link register gets the address of the next instruction, then jump
 pub(super) fn jal<E: Emitter>(
     cx: &mut Ctx<E>,
-    target: usize,
+    target: &RegOrConstant<InstrRegT>,
     link: &Reg<InstrRegT>,
 ) -> Result<Flow, CompileError> {
     cx.e.mov_imm(Tmp::T0, (cx.pc + 1) as u64, OpWidth::W64);
-    let slot = cx.layout.write_slot(SlotKey::Instr { index: link.index });
-    cx.e.store_slot(slot, Tmp::T0, OpWidth::W64);
-    cx.exit(BlockExit::Goto(target));
+    // link written before target is read so jal n:0 n:0 returns to pc+1
+    cx.store(link, Tmp::T0, OpWidth::W64);
+    exit_to(cx, target);
     Ok(Flow::End)
 }
 
@@ -30,7 +43,7 @@ pub(super) fn jal<E: Emitter>(
 pub(super) fn branch_zero<E: Emitter, RT: JitInt>(
     cx: &mut Ctx<E>,
     cond: CmpCond,
-    target: usize,
+    target: &RegOrConstant<InstrRegT>,
     op: &RegOrConstant<RT>,
 ) -> Result<Flow, CompileError> {
     let next = cx.pc + 1;
@@ -38,7 +51,11 @@ pub(super) fn branch_zero<E: Emitter, RT: JitInt>(
         // constant operand is just plain jump as outcome is known at compile time
         RegOrConstant::Const(c) => {
             let taken = (RT::imm_bits(c) == 0) == (cond == CmpCond::Eq);
-            cx.exit(BlockExit::Goto(if taken { target } else { next }));
+            if taken {
+                exit_to(cx, target);
+            } else {
+                cx.exit(BlockExit::Goto(next));
+            }
         }
         RegOrConstant::Reg(r) => {
             let w = cx.width(r.width)?;
@@ -47,7 +64,7 @@ pub(super) fn branch_zero<E: Emitter, RT: JitInt>(
             cx.e.branch_cmp(cond, Tmp::T0, Src::Imm(0), w, RT::SIGNEDNESS, taken);
             cx.exit(BlockExit::Goto(next)); // not taken
             cx.e.bind(taken);
-            cx.exit(BlockExit::Goto(target));
+            exit_to(cx, target);
         }
     }
     Ok(Flow::End)

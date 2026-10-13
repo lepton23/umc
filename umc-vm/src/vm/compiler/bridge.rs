@@ -1,6 +1,6 @@
 use umc_model::reg_model::*;
 
-use crate::vm::compiler::frame::{FrameLayout, SlotKey};
+use crate::vm::compiler::frame::{FrameLayout, FrameSlot, SlotKey};
 use crate::vm::state::{StoreFor, StorePrim};
 use crate::vm::types::address::InstructionAddress;
 use crate::vm::widths::int::IntWidth;
@@ -87,6 +87,11 @@ impl FrameBuffer {
     /// Convert frame buffer into mut ptr for passing into CompiledFn
     pub fn as_mut_ptr(&mut self) -> *mut u64 {
         self.slots.as_mut_ptr()
+    }
+
+    /// get target frameslot
+    pub fn get(&self, slot: FrameSlot) -> u64 {
+        self.slots[slot.0 as usize]
     }
 }
 
