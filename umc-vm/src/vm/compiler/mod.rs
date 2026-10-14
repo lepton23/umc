@@ -7,6 +7,7 @@ mod emit;
 pub mod engine;
 mod exec_mem;
 mod frame;
+mod host_mem;
 pub mod jit;
 mod lower;
 

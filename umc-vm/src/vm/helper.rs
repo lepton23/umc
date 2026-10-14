@@ -17,7 +17,6 @@ use crate::vm::types::{
 use crate::vm::widths::int::IntWidth;
 use crate::vm::widths::uint::UIntWidth;
 use crate::vm::widths::{WidthBinaryOp, WidthOptions, WidthUnaryOp};
-use umc_model::RegWidth;
 use umc_model::instructions::{
     AddParams, AnyConsistentNumOp, AnyReg, AnySingleReg, AnySingleRegOrConstant, BinaryCondition,
     CompareParams, CompareToZero, ConsistentComparison, ConsistentOp, ECallParams, MovParams,
@@ -26,6 +25,7 @@ use umc_model::instructions::{
 use umc_model::reg_model::{
     FloatRegT, InstrRegT, MemRegT, Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT,
 };
+use umc_model::{RegWidth, RegisterSet};
 
 // TODO: Make these helpers and the VM have a switchable Memory implementation
 type RegState = RegStateRaw<SafeAddress>;
@@ -734,4 +734,22 @@ pub fn read_offset(p: &OffsetOp, state: &RegState) -> isize {
         OffsetOp::Unsigned(op) => read_uint::<u64, _>(op, state).unwrap_or_default() as isize,
         OffsetOp::Signed(op) => read_int::<i64, _>(op, state) as isize,
     }
+}
+
+pub fn size_of(reg_type: &RegisterSet) -> u32 {
+    let rt = match reg_type {
+        umc_model::RegisterSet::Single(rt) => rt,
+        umc_model::RegisterSet::Vector(rt, _) => rt,
+    };
+    let mut size_bytes: u32 = match rt {
+        umc_model::RegType::Num(umc_model::NumRegType::UnsignedInt(w)) => w.div_ceil(u8::BITS),
+        umc_model::RegType::Num(umc_model::NumRegType::SignedInt(w)) => w.div_ceil(u8::BITS),
+        umc_model::RegType::Num(umc_model::NumRegType::Float(w)) => w.div_ceil(u8::BITS),
+        umc_model::RegType::InstructionAddress => InstructionAddress::SIZE_BYTES,
+        umc_model::RegType::MemoryAddress => SafeAddress::SIZE_BYTES,
+    };
+    if let umc_model::RegisterSet::Vector(_, length) = reg_type {
+        size_bytes = size_bytes * length;
+    }
+    size_bytes
 }

@@ -89,7 +89,7 @@ pub trait MemoryManager {
     ) -> Result<(), MemoryAccessError<Self::Address>>;
 }
 
-pub trait Serializable: Sized {
+pub(crate) trait Serializable: Sized {
     /// Read the value from a slice of bytes
     /// Fails if there is not enough bytes
     fn read_from(bytes: &[u8]) -> Result<Self, ()>;

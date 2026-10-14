@@ -6,15 +6,19 @@ mod control;
 mod debug;
 mod float;
 mod int;
+mod mem;
 mod operand;
 
 use std::ops::Range;
 
+use iced_x86::code_asm::asm_traits::CodeAsmGf2p8affineinvqb;
 use umc_model::instructions::*;
+use umc_model::reg_model::RegOrConstant;
 
 use crate::vm::compiler::frame::FrameSlot;
 use crate::vm::compiler::{BlockExit, CompileError, frame::FrameLayout};
 use crate::vm::compiler::{ExitTo, emit::*};
+use crate::vm::helper;
 
 pub(crate) struct Lowered {
     pub code: Vec<u8>,
@@ -37,6 +41,7 @@ struct Ctx<E: Emitter> {
     bails: Vec<(Label, usize)>,
     // instruction currently being lowered
     pc: usize,
+    entry: usize,
 }
 
 impl<E: Emitter> Ctx<E> {
@@ -47,6 +52,7 @@ impl<E: Emitter> Ctx<E> {
             exits: Vec::new(),
             bails: Vec::new(),
             pc,
+            entry: pc,
         }
     }
 
@@ -121,6 +127,8 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         Instruction::Mov(MovParams::SignedInt(dst, s)) => int::mov(cx, dst, s),
         Instruction::Mov(MovParams::Float(dst, s)) => float::mov(cx, dst, s),
         Instruction::Mov(MovParams::InstrAddress(dst, s)) => address::mov_iaddr(cx, dst, s),
+        Instruction::Mov(MovParams::MemAddress(dst, s)) => mem::mov(cx, dst, s),
+        Instruction::Add(AddParams::MemAddress(dst, base, off)) => mem::add(cx, dst, base, off),
         Instruction::Add(AddParams::UnsignedInt(ConsistentOp::Single(dst, lhs, rhs))) => {
             int::binop(cx, AluOp::Add, dst, lhs, rhs)
         }
@@ -173,6 +181,18 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
                     args: ConsistentComparison::InstrAddressCompare(lhs, rhs),
                 },
         } => address::compare_iaddr(cx, cond, dst, lhs, rhs),
+        Instruction::Compare {
+            cond,
+            params:
+                CompareParams {
+                    dst,
+                    args: ConsistentComparison::MemAddressCompare(lhs, rhs),
+                },
+        } => mem::compare(cx, cond, dst, lhs, rhs),
+        Instruction::Alloc(dst, size) => mem::alloc(cx, dst, size),
+        Instruction::Free(r) => mem::free(cx, r),
+        Instruction::Load(dst, src) => mem::load(cx, dst, src),
+        Instruction::Store(dst, src) => mem::store(cx, dst, src),
         Instruction::Jmp(target) => control::jmp(cx, target),
         Instruction::Jal(target, link) => control::jal(cx, target, link),
         Instruction::Bz(target, CompareToZero::Unsigned(op)) => {
@@ -187,13 +207,25 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         Instruction::Bnz(target, CompareToZero::Signed(op)) => {
             control::branch_zero(cx, CmpCond::Ne, target, op)
         }
-        // Alloc, Free, Load, Store, SizeOf, Cast, ECall not lowered yet
+        Instruction::SizeOf(dst, set) => {
+            int::mov(cx, dst, &RegOrConstant::Const(helper::size_of(set) as u64))
+        }
+        Instruction::ECall(_) => hand_over(cx),
         Instruction::Dbg(AnyReg::Single(AnySingleReg::Unsigned(r))) => debug::dbg_unsigned(cx, r),
         _ => {
             println!("{}", instr);
             not_lowered(cx)
         }
     }
+}
+
+/// leave instruction to interpreter
+fn hand_over<E: Emitter>(cx: &mut Ctx<E>) -> Result<Flow, CompileError> {
+    if cx.pc == cx.entry {
+        return Err(cx.unsupported("instruction always interpreted"));
+    }
+    cx.exit(BlockExit::Interpret(cx.pc));
+    Ok(Flow::End)
 }
 
 /// Sub / Mul / Div / Mod / And / Or / Xor share operand shapes

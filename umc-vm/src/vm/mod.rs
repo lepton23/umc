@@ -262,20 +262,7 @@ impl VirtualMachine {
                 });
             }
             Instruction::SizeOf(reg, reg_type) => {
-                let rt = match reg_type {
-                    umc_model::RegisterSet::Single(rt) => rt,
-                    umc_model::RegisterSet::Vector(rt, _) => rt,
-                };
-                let mut size_bytes: u32 = match rt {
-                    RegType::Num(NumRegType::UnsignedInt(w)) => w.div_ceil(u8::BITS),
-                    RegType::Num(NumRegType::SignedInt(w)) => w.div_ceil(u8::BITS),
-                    RegType::Num(NumRegType::Float(w)) => w.div_ceil(u8::BITS),
-                    RegType::InstructionAddress => InstructionAddress::SIZE_BYTES,
-                    RegType::MemoryAddress => SafeAddress::SIZE_BYTES,
-                };
-                if let RegisterSet::Vector(_, length) = reg_type {
-                    size_bytes = size_bytes * length;
-                }
+                let size_bytes = helper::size_of(reg_type);
                 UIntWidth::store_u64(*reg, &mut self.state, size_bytes as u64);
             }
             Instruction::Cast(simple_cast) => {
