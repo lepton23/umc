@@ -212,6 +212,10 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         }
         Instruction::ECall(_) => hand_over(cx),
         Instruction::Dbg(AnyReg::Single(AnySingleReg::Unsigned(r))) => debug::dbg_unsigned(cx, r),
+        Instruction::Dbg(AnyReg::Single(AnySingleReg::Signed(r))) => debug::dbg_signed(cx, r),
+        Instruction::Dbg(AnyReg::Single(AnySingleReg::Float(r))) => debug::dbg_float(cx, r),
+        Instruction::Dbg(AnyReg::Single(AnySingleReg::Instr(r))) => debug::dbg_instr(cx, r),
+        Instruction::Dbg(AnyReg::Single(AnySingleReg::Mem(r))) => debug::dbg_mem(cx, r),
         _ => {
             println!("{}", instr);
             not_lowered(cx)

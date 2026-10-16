@@ -134,6 +134,38 @@ pub extern "C" fn jit_dbg_unsigned(value: u64, index: u64, width: u64) {
         index: index as _,
         width: width as _,
     };
+    println!("{} = 0x{:X} = {}", reg, value, value);
+}
+
+pub extern "C" fn jit_dbg_signed(value: u64, index: u64, width: u64) {
+    let reg = Reg::<SignedRegT> {
+        index: index as _,
+        width: width as _,
+    };
+    println!("{} = {}", reg, value);
+}
+
+pub extern "C" fn jit_dbg_float(value: u64, index: u64, width: u64) {
+    let reg = Reg::<FloatRegT> {
+        index: index as _,
+        width: width as _,
+    };
+    println!("{} = {}", reg, value);
+}
+
+pub extern "C" fn jit_dbg_instr(value: u64, index: u64) {
+    let reg = Reg::<InstrRegT> {
+        index: index as _,
+        width: NoWidth,
+    };
+    println!("{} = 0x{:X}", reg, value);
+}
+
+pub extern "C" fn jit_dbg_mem(value: u64, index: u64) {
+    let reg = Reg::<MemRegT> {
+        index: index as _,
+        width: NoWidth,
+    };
     println!("{} = 0x{:X}", reg, value);
 }
 
