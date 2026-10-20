@@ -1,7 +1,11 @@
+mod aarch64;
 mod x86_64;
 
 use crate::vm::RegWidth;
 use crate::vm::compiler::{FrameLayout, FrameSlot};
+
+#[cfg(target_arch = "aarch64")]
+pub type NativeEmitter = aarch64::AArch64Emitter;
 
 #[cfg(target_arch = "x86_64")]
 pub type NativeEmitter = x86_64::X86Emitter;

@@ -62,7 +62,7 @@ pub(super) fn dbg_instr<E: Emitter>(
     cx: &mut Ctx<E>,
     r: &Reg<InstrRegT>,
 ) -> Result<Flow, CompileError> {
-    cx.load_reg(r, Tmp::T0, w);
+    cx.load_reg(r, Tmp::T0, OpWidth::W64);
     cx.e.call_host(
         jit_dbg_float as *const () as usize,
         &[Arg::Tmp(Tmp::T0), Arg::Imm(r.index as u64)],
@@ -71,7 +71,7 @@ pub(super) fn dbg_instr<E: Emitter>(
 }
 
 pub(super) fn dbg_mem<E: Emitter>(cx: &mut Ctx<E>, r: &Reg<MemRegT>) -> Result<Flow, CompileError> {
-    cx.load_reg(r, Tmp::T0, w);
+    cx.load_reg(r, Tmp::T0, OpWidth::W64);
     cx.e.call_host(
         jit_dbg_float as *const () as usize,
         &[Arg::Tmp(Tmp::T0), Arg::Imm(r.index as u64)],

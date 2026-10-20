@@ -2,7 +2,7 @@
 
 use umc_model::RegWidth;
 use umc_model::reg_model::{
-    FloatRegT, InstrRegT, Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT,
+    FloatRegT, InstrRegT, MemRegT, Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT,
 };
 
 use super::Ctx;
@@ -59,6 +59,15 @@ impl JitReg for InstrRegT {
         SlotKey::Instr { index: r.index }
     }
     fn imm_bits(c: &usize) -> u64 {
+        *c as u64
+    }
+}
+
+impl JitReg for MemRegT {
+    fn key(r: &Reg<Self>) -> SlotKey {
+        SlotKey::MemBlock { index: r.index }
+    }
+    fn imm_bits(c: &u32) -> u64 {
         *c as u64
     }
 }

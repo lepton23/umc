@@ -156,7 +156,7 @@ pub extern "C" fn jit_dbg_float(value: u64, index: u64, width: u64) {
 pub extern "C" fn jit_dbg_instr(value: u64, index: u64) {
     let reg = Reg::<InstrRegT> {
         index: index as _,
-        width: NoWidth,
+        width: NoWidth {},
     };
     println!("{} = 0x{:X}", reg, value);
 }
@@ -164,7 +164,7 @@ pub extern "C" fn jit_dbg_instr(value: u64, index: u64) {
 pub extern "C" fn jit_dbg_mem(value: u64, index: u64) {
     let reg = Reg::<MemRegT> {
         index: index as _,
-        width: NoWidth,
+        width: NoWidth {},
     };
     println!("{} = 0x{:X}", reg, value);
 }
