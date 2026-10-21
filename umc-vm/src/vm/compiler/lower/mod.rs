@@ -11,7 +11,6 @@ mod operand;
 
 use std::ops::Range;
 
-use iced_x86::code_asm::asm_traits::CodeAsmGf2p8affineinvqb;
 use umc_model::instructions::*;
 use umc_model::reg_model::RegOrConstant;
 

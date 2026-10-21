@@ -32,7 +32,7 @@ use crate::vm::types::{
 use crate::vm::widths::uint::UIntWidth;
 use umc_model::instructions::Instruction;
 use umc_model::reg_model::{Reg, RegOrConstant, UnsignedRegT};
-use umc_model::{NumRegType, Program, RegIndex, RegType, RegWidth, RegisterSet};
+use umc_model::{Program, RegIndex, RegWidth};
 
 pub struct VirtualMachine {
     program: Vec<Instruction>,
