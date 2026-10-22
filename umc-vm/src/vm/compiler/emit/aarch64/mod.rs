@@ -121,4 +121,53 @@ impl CoreEmitter for ArmEmitter {
             ; ret
         );
     }
+
+    fn call_host(&mut self, f: usize, args: &[Arg]) {
+        debug_assert!(args.len() <= CALL_ARGS.len());
+        // copy in Tmp args first
+        let mut staged = 0;
+        let mut from = [None; 4];
+        for (i, a) in args.iter().enumerate() {
+            if let Arg::Tmp(t) = *a {
+                debug_assert!(staged < STAGE.len(), "at most 2 Tmp args");
+                arm!(self.ops
+                    ; mov X(STAGE[staged]), X(reg(t))
+                );
+                from[i] = Some(STAGE[staged]);
+            }
+        }
+        for (i, a) in args.iter().enumerate() {
+            match (*a, from[i]) {
+                (_, Some(s)) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(s)),
+                (Arg::Imm(i), None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), #i),
+                (Arg::Frame, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(FRAME_BASE)),
+                (Arg::Mem, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(MEM_BASE)),
+                (Arg::Tmp(_), None) => unreachable!(),
+            }
+        }
+        arm!(self.ops
+            ; mov X(SCRATCH), #f as u64
+            ; blr X(SCRATCH)
+        );
+    }
+
+    fn jump(&mut self, target: Label) {
+        let st = &mut self.labels[target.0 as usize];
+        st.referenced = true;
+        let dl = st.dl;
+
+        arm!(self.ops ; b =>dl)
+    }
+
+    fn finish(mut self) -> Result<Vec<u8>, EmitError> {
+        if let Some(e) = self.error.take() {
+            return Err(e);
+        }
+        if let Some(i) = self.labels.iter().position(|s| s.referenced && !s.bound) {
+            return Err(EmitError::UnboundLabel(Label(i as u32)));
+        }
+        self.ops
+            .finalize()
+            .map_err(|e| EmitError::Asm(e.to_string()))
+    }
 }
