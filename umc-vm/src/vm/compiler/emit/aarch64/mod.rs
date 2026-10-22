@@ -134,6 +134,7 @@ impl CoreEmitter for ArmEmitter {
                     ; mov X(STAGE[staged]), X(reg(t))
                 );
                 from[i] = Some(STAGE[staged]);
+                staged += 1;
             }
         }
         for (i, a) in args.iter().enumerate() {
