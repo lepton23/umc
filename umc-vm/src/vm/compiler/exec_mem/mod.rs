@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(page.len(), PAGE_SIZE);
 
         let mut frame = 0u64; // dummy frame
-        let result = unsafe { page.as_fn()(&mut frame) };
+        let result = unsafe { page.as_fn()(&mut frame, std::ptr::null_mut()) };
         assert_eq!(result, 7);
     }
 

@@ -1,5 +1,5 @@
 //! Wrapped Posix functions to allocate RW virtual pages and change protection to RX, flush instruction cache, and drop accordingly
-use core::ffi::c_void;
+use core::ffi::{c_char, c_void};
 use core::ptr::{NonNull, null_mut};
 
 use super::ExecMemError;
@@ -39,8 +39,17 @@ pub(super) unsafe fn protect_rx(ptr: NonNull<c_void>, len: usize) -> Result<(), 
 }
 
 /// flush icache - needed for aarch
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub(super) unsafe fn flush_icache(_ptr: NonNull<c_void>, _len: usize) -> Result<(), ExecMemError> {
+    Ok(())
+}
+#[cfg(target_arch = "aarch64")]
+pub(super) unsafe fn flush_icache(ptr: NonNull<c_void>, len: usize) -> Result<(), ExecMemError> {
+    unsafe extern "C" {
+        fn __clear_cache(start: *mut c_char, end: *mut c_char);
+    }
+    let p = ptr.as_ptr() as *mut c_char;
+    unsafe { __clear_cache(p, p.add(len)) };
     Ok(())
 }
 
