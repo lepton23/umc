@@ -140,7 +140,7 @@ impl CoreEmitter for ArmEmitter {
         for (i, a) in args.iter().enumerate() {
             match (*a, from[i]) {
                 (_, Some(s)) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(s)),
-                (Arg::Imm(i), None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), #i),
+                (Arg::Imm(v), None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), #v),
                 (Arg::Frame, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(FRAME_BASE)),
                 (Arg::Mem, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(MEM_BASE)),
                 (Arg::Tmp(_), None) => unreachable!(),
