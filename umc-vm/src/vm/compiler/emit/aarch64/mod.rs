@@ -140,16 +140,14 @@ impl CoreEmitter for ArmEmitter {
         for (i, a) in args.iter().enumerate() {
             match (*a, from[i]) {
                 (_, Some(s)) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(s)),
-                (Arg::Imm(v), None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), #v),
+                (Arg::Imm(v), None) => mov_imm64(&mut self.ops, CALL_ARGS[i as usize], v),
                 (Arg::Frame, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(FRAME_BASE)),
                 (Arg::Mem, None) => arm!(self.ops ; mov X(CALL_ARGS[i as usize]), X(MEM_BASE)),
                 (Arg::Tmp(_), None) => unreachable!(),
             }
         }
-        arm!(self.ops
-            ; mov X(SCRATCH), #f as u64
-            ; blr X(SCRATCH)
-        );
+        mov_imm64(&mut self.ops, SCRATCH, f as u64);
+        arm!(self.ops ; blr X(SCRATCH));
     }
 
     fn jump(&mut self, target: Label) {

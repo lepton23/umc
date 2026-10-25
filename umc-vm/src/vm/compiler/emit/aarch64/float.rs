@@ -46,9 +46,10 @@ impl FloatEmitter for ArmEmitter {
     // shortcut: always movz + movk, negatives cost up to 4 instrs where movn would be 1, upgrade if hot
     fn fmov_imm(&mut self, dst: FTmp, bits: u64, w: OpWidth) {
         let d = freg(dst);
+        mov_imm64(&mut self.ops, SCRATCH, bits);
         match w {
-            OpWidth::W64 => arm!(self.ops ; fmov D(d), #bits as f32),
-            OpWidth::W32 => arm!(self.ops ; fmov S(d), #bits as f32),
+            OpWidth::W64 => arm!(self.ops ; fmov D(d), X(SCRATCH)),
+            OpWidth::W32 => arm!(self.ops ; fmov S(d), W(SCRATCH)),
         }
     }
 
