@@ -192,15 +192,30 @@ pub(super) fn load<E: Emitter>(
     let a = addr_slot(cx, src);
     let (f, d) = match dst {
         AnySingleReg::Unsigned(r) => (
-            by_width(cx, r.width, jit_load::<u32> as *const () as usize, jit_load::<u64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_load::<u32> as *const () as usize,
+                jit_load::<u64> as *const () as usize,
+            )?,
             cx.layout.write_slot(JitReg::key(r)),
         ),
         AnySingleReg::Signed(r) => (
-            by_width(cx, r.width, jit_load::<i32> as *const () as usize, jit_load::<i64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_load::<i32> as *const () as usize,
+                jit_load::<i64> as *const () as usize,
+            )?,
             cx.layout.write_slot(JitReg::key(r)),
         ),
         AnySingleReg::Float(r) => (
-            by_width(cx, r.width, jit_load::<f32> as *const () as usize, jit_load::<f64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_load::<f32> as *const () as usize,
+                jit_load::<f64> as *const () as usize,
+            )?,
             cx.layout.write_slot(JitReg::key(r)),
         ),
         AnySingleReg::Instr(r) => (
@@ -215,7 +230,12 @@ pub(super) fn load<E: Emitter>(
     call_checked(
         cx,
         f,
-        &[Arg::Mem, Arg::Frame, Arg::Imm(a.0 as u64), Arg::Imm(d.0 as u64)],
+        &[
+            Arg::Mem,
+            Arg::Frame,
+            Arg::Imm(a.0 as u64),
+            Arg::Imm(d.0 as u64),
+        ],
     );
     Ok(Flow::Next)
 }
@@ -229,15 +249,30 @@ pub(super) fn store<E: Emitter>(
     let a = addr_slot(cx, dst);
     let (f, s) = match src {
         AnySingleReg::Unsigned(r) => (
-            by_width(cx, r.width, jit_store::<u32> as *const () as usize, jit_store::<u64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_store::<u32> as *const () as usize,
+                jit_store::<u64> as *const () as usize,
+            )?,
             cx.layout.read_slot(JitReg::key(r)),
         ),
         AnySingleReg::Signed(r) => (
-            by_width(cx, r.width, jit_store::<i32> as *const () as usize, jit_store::<i64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_store::<i32> as *const () as usize,
+                jit_store::<i64> as *const () as usize,
+            )?,
             cx.layout.read_slot(JitReg::key(r)),
         ),
         AnySingleReg::Float(r) => (
-            by_width(cx, r.width, jit_store::<f32> as *const () as usize, jit_store::<f64> as *const () as usize)?,
+            by_width(
+                cx,
+                r.width,
+                jit_store::<f32> as *const () as usize,
+                jit_store::<f64> as *const () as usize,
+            )?,
             cx.layout.read_slot(JitReg::key(r)),
         ),
         AnySingleReg::Instr(r) => (
@@ -252,7 +287,12 @@ pub(super) fn store<E: Emitter>(
     call_checked(
         cx,
         f,
-        &[Arg::Mem, Arg::Frame, Arg::Imm(a.0 as u64), Arg::Imm(s.0 as u64)],
+        &[
+            Arg::Mem,
+            Arg::Frame,
+            Arg::Imm(a.0 as u64),
+            Arg::Imm(s.0 as u64),
+        ],
     );
     Ok(Flow::Next)
 }
@@ -267,7 +307,12 @@ pub(super) fn alloc<E: Emitter>(
     let d = cx.layout.mem_write_slot(dst.index);
     cx.e.call_host(
         host_mem::jit_alloc as *const () as usize,
-        &[Arg::Mem, Arg::Frame, Arg::Imm(d.0 as u64), Arg::Tmp(Tmp::T0)],
+        &[
+            Arg::Mem,
+            Arg::Frame,
+            Arg::Imm(d.0 as u64),
+            Arg::Tmp(Tmp::T0),
+        ],
     );
     Ok(Flow::Next)
 }

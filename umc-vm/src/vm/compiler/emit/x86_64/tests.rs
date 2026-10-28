@@ -159,167 +159,173 @@ fn branch_to_unbound_label_is_an_error() {
     assert_eq!(e.finish(), Err(EmitError::UnboundLabel(l)));
 }
 
-// emit a block, commit it to exec memory and run it on real frame
-#[test]
-fn emitted_block_runs_on_frame() {
-    use crate::vm::compiler::exec_mem::ExecPage;
-    use rustc_hash::FxHashMap;
+// everything below runs emitted code, so only on an x86_64 host
+#[cfg(target_arch = "x86_64")]
+mod exec {
+    use super::*;
 
-    let layout = FrameLayout {
-        slots: Vec::new(),
-        lookup: FxHashMap::default(),
-    };
+    // emit a block, commit it to exec memory and run it on real frame
+    #[test]
+    fn emitted_block_runs_on_frame() {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
 
-    // slot2 = slot0 - slot1; exit 2 if slot0 < slot1 (signed) else exit 1
-    let mut e = X86Emitter::new();
-    let less = e.new_label();
-    e.prologue(&layout);
-    e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
-    e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
-    e.alu(
-        AluOp::Sub,
-        Tmp::T2,
-        Tmp::T0,
-        Src::Tmp(Tmp::T1),
-        OpWidth::W64,
-        Signedness::Unsigned,
-    );
-    e.store_slot(FrameSlot::new(2), Tmp::T2, OpWidth::W64);
-    e.branch_cmp(
-        CmpCond::Lt,
-        Tmp::T0,
-        Src::Tmp(Tmp::T1),
-        OpWidth::W64,
-        Signedness::Signed,
-        less,
-    );
-    e.ret_exit(1);
-    e.bind(less);
-    e.ret_exit(2);
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
 
-    let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        // slot2 = slot0 - slot1; exit 2 if slot0 < slot1 (signed) else exit 1
+        let mut e = X86Emitter::new();
+        let less = e.new_label();
+        e.prologue(&layout);
+        e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
+        e.alu(
+            AluOp::Sub,
+            Tmp::T2,
+            Tmp::T0,
+            Src::Tmp(Tmp::T1),
+            OpWidth::W64,
+            Signedness::Unsigned,
+        );
+        e.store_slot(FrameSlot::new(2), Tmp::T2, OpWidth::W64);
+        e.branch_cmp(
+            CmpCond::Lt,
+            Tmp::T0,
+            Src::Tmp(Tmp::T1),
+            OpWidth::W64,
+            Signedness::Signed,
+            less,
+        );
+        e.ret_exit(1);
+        e.bind(less);
+        e.ret_exit(2);
 
-    let mut frame = [10u64, 3, 0];
-    let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
-    assert_eq!((exit, frame), (1, [10, 3, 7]));
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
 
-    let mut frame = [3u64, 10, 0];
-    let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
-    assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
-}
+        let mut frame = [10u64, 3, 0];
+        let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        assert_eq!((exit, frame), (1, [10, 3, 7]));
 
-// run dst = slot0 op rhs for each (op, rhs) with rdx dirtied beforehand, results stored from slot 2 onwards
-fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
-    use crate::vm::compiler::exec_mem::ExecPage;
-    use rustc_hash::FxHashMap;
-
-    let layout = FrameLayout {
-        slots: Vec::new(),
-        lookup: FxHashMap::default(),
-    };
-    let mut e = X86Emitter::new();
-    e.prologue(&layout);
-    for (i, (op, rhs)) in ops.iter().enumerate() {
-        e.mov_imm(Tmp::T2, 0xDEAD, OpWidth::W64); // garbage high half of dividend
-        e.load_slot(Tmp::T0, FrameSlot::new(0), w);
-        e.load_slot(Tmp::T1, FrameSlot::new(1), w);
-        e.alu(*op, Tmp::T0, Tmp::T0, *rhs, w, Signedness::Unsigned);
-        e.store_slot(FrameSlot::new(2 + i as u16), Tmp::T0, w);
+        let mut frame = [3u64, 10, 0];
+        let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
     }
-    e.ret_exit(0);
-    let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
-}
 
-#[test]
-fn div_mod_64_ignore_dirty_rdx() {
-    let ops = [
-        (AluOp::Div, Src::Tmp(Tmp::T1)),
-        (AluOp::Mod, Src::Tmp(Tmp::T1)),
-        (AluOp::Div, Src::Imm(7)),
-        (AluOp::Mod, Src::Imm(7)),
-    ];
-    let mut frame = [100u64, 3, 0, 0, 0, 0];
-    run_div_mod(OpWidth::W64, &ops, &mut frame);
-    assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
-}
+    // run dst = slot0 op rhs for each (op, rhs) with rdx dirtied beforehand, results stored from slot 2 onwards
+    fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
 
-#[test]
-fn div_mod_32_ignore_dirty_rdx() {
-    let ops = [
-        (AluOp::Div, Src::Tmp(Tmp::T1)),
-        (AluOp::Mod, Src::Tmp(Tmp::T1)),
-        (AluOp::Div, Src::Imm(7)),
-        (AluOp::Mod, Src::Imm(7)),
-    ];
-    let mut frame = [100u64, 3, 0, 0, 0, 0];
-    run_div_mod(OpWidth::W32, &ops, &mut frame);
-    assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
-}
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
+        let mut e = X86Emitter::new();
+        e.prologue(&layout);
+        for (i, (op, rhs)) in ops.iter().enumerate() {
+            e.mov_imm(Tmp::T2, 0xDEAD, OpWidth::W64); // garbage high half of dividend
+            e.load_slot(Tmp::T0, FrameSlot::new(0), w);
+            e.load_slot(Tmp::T1, FrameSlot::new(1), w);
+            e.alu(*op, Tmp::T0, Tmp::T0, *rhs, w, Signedness::Unsigned);
+            e.store_slot(FrameSlot::new(2 + i as u16), Tmp::T0, w);
+        }
+        e.ret_exit(0);
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+    }
 
-#[test]
-fn div_mod_divisor_aliasing_rax_or_rdx() {
-    use crate::vm::compiler::exec_mem::ExecPage;
-    use rustc_hash::FxHashMap;
+    #[test]
+    fn div_mod_64_ignore_dirty_rdx() {
+        let ops = [
+            (AluOp::Div, Src::Tmp(Tmp::T1)),
+            (AluOp::Mod, Src::Tmp(Tmp::T1)),
+            (AluOp::Div, Src::Imm(7)),
+            (AluOp::Mod, Src::Imm(7)),
+        ];
+        let mut frame = [100u64, 3, 0, 0, 0, 0];
+        run_div_mod(OpWidth::W64, &ops, &mut frame);
+        assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
+    }
 
-    let layout = FrameLayout {
-        slots: Vec::new(),
-        lookup: FxHashMap::default(),
-    };
-    let mut e = X86Emitter::new();
-    e.prologue(&layout);
-    // slot2 = slot0 / T0 where T0 = slot1 (divisor in rax), lhs in rcx
-    e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
-    e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
-    e.alu(
-        AluOp::Div,
-        Tmp::T0,
-        Tmp::T1,
-        Src::Tmp(Tmp::T0),
-        OpWidth::W64,
-        Signedness::Unsigned,
-    );
-    e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
-    // slot3 = slot0 % T2 where T2 = slot1 (divisor in rdx)
-    e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
-    e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
-    e.alu(
-        AluOp::Mod,
-        Tmp::T1,
-        Tmp::T0,
-        Src::Tmp(Tmp::T2),
-        OpWidth::W64,
-        Signedness::Unsigned,
-    );
-    e.store_slot(FrameSlot::new(3), Tmp::T1, OpWidth::W64);
-    e.ret_exit(0);
-    let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+    #[test]
+    fn div_mod_32_ignore_dirty_rdx() {
+        let ops = [
+            (AluOp::Div, Src::Tmp(Tmp::T1)),
+            (AluOp::Mod, Src::Tmp(Tmp::T1)),
+            (AluOp::Div, Src::Imm(7)),
+            (AluOp::Mod, Src::Imm(7)),
+        ];
+        let mut frame = [100u64, 3, 0, 0, 0, 0];
+        run_div_mod(OpWidth::W32, &ops, &mut frame);
+        assert_eq!(frame, [100, 3, 33, 1, 14, 2]);
+    }
 
-    let mut frame = [100u64, 3, 0, 0];
-    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
-    assert_eq!(frame, [100, 3, 33, 1]);
-}
+    #[test]
+    fn div_mod_divisor_aliasing_rax_or_rdx() {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        use rustc_hash::FxHashMap;
 
-extern "C" fn host_sub(a: u64, b: u64) -> u64 {
-    a.wrapping_sub(b)
-}
+        let layout = FrameLayout {
+            slots: Vec::new(),
+            lookup: FxHashMap::default(),
+        };
+        let mut e = X86Emitter::new();
+        e.prologue(&layout);
+        // slot2 = slot0 / T0 where T0 = slot1 (divisor in rax), lhs in rcx
+        e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
+        e.alu(
+            AluOp::Div,
+            Tmp::T0,
+            Tmp::T1,
+            Src::Tmp(Tmp::T0),
+            OpWidth::W64,
+            Signedness::Unsigned,
+        );
+        e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
+        // slot3 = slot0 % T2 where T2 = slot1 (divisor in rdx)
+        e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
+        e.alu(
+            AluOp::Mod,
+            Tmp::T1,
+            Tmp::T0,
+            Src::Tmp(Tmp::T2),
+            OpWidth::W64,
+            Signedness::Unsigned,
+        );
+        e.store_slot(FrameSlot::new(3), Tmp::T1, OpWidth::W64);
+        e.ret_exit(0);
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
 
-// args in reverse Tmp order would clobber each other on Win64 without staging
-#[test]
-fn call_host_stages_tmp_args() {
-    use crate::vm::compiler::exec_mem::ExecPage;
-    let mut e = X86Emitter::new();
-    e.prologue(&FrameLayout::new());
-    e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
-    e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
-    e.call_host(
-        host_sub as *const () as usize,
-        &[Arg::Tmp(Tmp::T2), Arg::Tmp(Tmp::T1)],
-    );
-    e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
-    e.ret_exit(0);
-    let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-    let mut frame = [10u64, 3, 0];
-    unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
-    assert_eq!(frame[2], 3u64.wrapping_sub(10));
+        let mut frame = [100u64, 3, 0, 0];
+        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        assert_eq!(frame, [100, 3, 33, 1]);
+    }
+
+    extern "C" fn host_sub(a: u64, b: u64) -> u64 {
+        a.wrapping_sub(b)
+    }
+
+    // args in reverse Tmp order would clobber each other on Win64 without staging
+    #[test]
+    fn call_host_stages_tmp_args() {
+        use crate::vm::compiler::exec_mem::ExecPage;
+        let mut e = X86Emitter::new();
+        e.prologue(&FrameLayout::new());
+        e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
+        e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
+        e.call_host(
+            host_sub as *const () as usize,
+            &[Arg::Tmp(Tmp::T2), Arg::Tmp(Tmp::T1)],
+        );
+        e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
+        e.ret_exit(0);
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        let mut frame = [10u64, 3, 0];
+        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        assert_eq!(frame[2], 3u64.wrapping_sub(10));
+    }
 }
