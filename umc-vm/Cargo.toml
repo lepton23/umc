@@ -23,6 +23,10 @@ dynasmrt = { version = "5.1.0", optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
 
+[dev-dependencies]
+yaxpeax-arch = "0.3"
+yaxpeax-arm = "0.4"
+
 [features]
 default = ["jit"]
 jit = ["dep:libc", "dep:iced-x86", "dep:dynasmrt"]
