@@ -183,6 +183,7 @@ impl DisplayAssembly for Instruction {
             }
             Instruction::Sqrt(reg) => write_instr(f, "sqrt", reg, opts),
             Instruction::Exp(reg, op) => write_instr(f, "exp", &ParamPair(reg, op), opts),
+            Instruction::Pow(params) => write_instr(f, "pow", params, opts),
             Instruction::ECall(ecall) => write_instr(f, "ecall", ecall, opts),
             Instruction::Dbg(reg_operand) => write_instr(f, "dbg", reg_operand, opts),
         }
@@ -479,6 +480,18 @@ impl DisplayAssembly for ShiftParams {
         opts: &DisplayAssemblyParams,
     ) -> std::fmt::Result {
         ParamPair(&self.dst, &self.size).fmt_assembly(f, opts)?;
+        Ok(())
+    }
+}
+
+impl DisplayAssembly for PowParams {
+    fn fmt_assembly(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        opts: &DisplayAssemblyParams,
+    ) -> std::fmt::Result {
+        let _ = write!(f, "{}", self.dst);
+        ParamPair(&self.op1, &self.op2).fmt_assembly(f, opts)?;
         Ok(())
     }
 }

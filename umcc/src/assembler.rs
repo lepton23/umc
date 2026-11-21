@@ -4,8 +4,8 @@ use std::ops::RangeInclusive;
 use crate::ast::{self, OperandWithLoc};
 use umc_model::instructions::{
     AddParams, AnyConsistentNumOp, BinaryCondition, CompareParams, CompareToZero,
-    ConsistentComparison, ECallParams, Instruction, MovParams, NotParams, ShiftParams, ShiftType,
-    SimpleCast,
+    ConsistentComparison, ECallParams, Instruction, MovParams, NotParams, PowParams, ShiftParams,
+    ShiftType, SimpleCast,
 };
 use umc_model::operand::{Operand, RegOperand};
 use umc_model::parse::{InstructionValidateError, parse_any_reg, parse_any_single_reg};
@@ -463,6 +463,12 @@ pub fn ast_to_bytecode(
             let operand = RegOrConstant::from_float(&operand)
                 .map_err(|_| AssembleInstructionError::invalid_op_type(p2))?;
             Ok(Instruction::Exp(dst_reg, operand))
+        }
+        "pow" => {
+            let inferred = infer_ops::<3>(&instr, labels)?;
+            let refs: Vec<&Operand> = inferred.iter().collect();
+            let params = PowParams::try_from(refs.as_slice()).map_err(|e| add_ctx(e, &instr))?;
+            Ok(Instruction::Pow(params))
         }
         "ecall" => {
             let ecall = ecall_instr(&instr, labels)?;

@@ -9,7 +9,7 @@ use crate::binary::{BinaryFormatVersion, DecodeError, EncodeError};
 use crate::format::{DisplayAssembly, DisplayAssemblyParams};
 use crate::instructions::{
     AddParams, AnyConsistentNumOp, BinaryCondition, CompareParams, CompareToZero, ECallParams,
-    Instruction, MovParams, NotParams, ShiftParams, ShiftType, SimpleCast,
+    Instruction, MovParams, NotParams, PowParams, ShiftParams, ShiftType, SimpleCast,
 };
 use crate::operand::{Operand, RegOperand};
 use crate::parse::{parse_any_reg, parse_any_single_reg};
@@ -678,11 +678,18 @@ pub fn decode_instruction<R: io::Read>(
             })?;
             let operand = RegOrConstant::from_float(&op2).map_err(|_| {
                 DecodeError::Malformed(format!(
-                    "Invalid Exp Instruction: Expected float register / immediate"
+                    "Invalid Exp Instruction: Expected float register / immediate operand"
                 ))
             })?;
             Ok(Instruction::Exp(dst_reg, operand))
         })?,
+        OpCode::POW => {
+            disassembler.decode_fixed_instruction(src, opcode_raw, |[op1, op2, op3]| {
+                let params = PowParams::try_from([op1, op2, op3].as_slice())
+                    .map_err(|e| DecodeError::Malformed(format!("Invalid pow: {:?}", e)))?;
+                Ok(Instruction::Pow(params))
+            })?
+        }
         OpCode::ECALL => disassembler.decode_variable_instruction(src, opcode_raw, |ops| {
             Ok(Instruction::ECall(ECallParams::try_from(ops)?))
         })?,
@@ -741,6 +748,7 @@ fn split_instruction(instr: &Instruction) -> (OpCode, Vec<Operand>) {
         Instruction::Shift(_, ShiftType::RightArithmeticShift) => OpCode::ASHR,
         Instruction::Sqrt(_) => OpCode::SQRT,
         Instruction::Exp(_, _) => OpCode::EXP,
+        Instruction::Pow(_) => OpCode::POW,
         Instruction::ECall(_) => OpCode::ECALL,
         Instruction::Dbg(_) => OpCode::DBG,
     };
@@ -996,11 +1004,10 @@ enum OpCode {
     SHR = 0b101001,
     ASHR = 0b101010,
 
-    // SQRT
+    // SQRT, EXP, POW
     SQRT = 0b101100,
-
-    // EXP
     EXP = 0b101101,
+    POW = 0b101110,
 
     // Environment call
     ECALL = 0b110100,

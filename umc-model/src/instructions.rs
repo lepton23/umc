@@ -78,9 +78,11 @@ pub enum Instruction {
     // UMC analogue of C++ exp/expf/expl
     Exp(Reg<FloatRegT>, RegOrConstant<FloatRegT>),
 
+    // Pow op1^op2
+    Pow(PowParams),
+
     /// Environment call
     ECall(ECallParams),
-    // TODO: Float to integer cast
     /// Print the given register (debugging)
     Dbg(AnyReg),
 }
@@ -438,4 +440,11 @@ pub enum ShiftType {
     RightLogicalShift,
     // Arithmetic Right Shift - only needed for preserving sign of signed integers
     RightArithmeticShift,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PowParams {
+    pub dst: Reg<FloatRegT>,
+    pub op1: RegOrConstant<FloatRegT>,
+    pub op2: RegOrConstant<FloatRegT>,
 }

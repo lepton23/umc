@@ -1,7 +1,7 @@
 use crate::instructions::{
     AddParams, AnyConsistentNumOp, AnyReg, AnySingleReg, AnySingleRegOrConstant, CompareParams,
     CompareToZero, ConsistentComparison, ConsistentOp, ECallParams, Instruction, MovParams,
-    NotParams, OffsetOp, ResizeCast, ShiftParams, SimpleCast,
+    NotParams, OffsetOp, PowParams, ResizeCast, ShiftParams, SimpleCast,
 };
 use crate::operand::{Operand, RegOperand};
 use crate::reg_model::{
@@ -70,6 +70,7 @@ pub fn instr_to_raw(instr: &Instruction) -> Vec<Operand> {
         Instruction::Shift(params, _) => shift_to_raw(params),
         Instruction::Sqrt(reg) => sqrt_to_raw(reg),
         Instruction::Exp(reg, op) => vec![Operand::Reg(reg.into()), op.into()],
+        Instruction::Pow(params) => pow_to_raw(params),
         Instruction::ECall(ecall) => ecall_to_raw(ecall),
         Instruction::Dbg(reg_operand) => vec![Operand::Reg(reg_operand.into())],
     }
@@ -217,6 +218,13 @@ fn sqrt_to_raw(reg: &AnySingleReg) -> Vec<Operand> {
         AnySingleReg::Float(dst) => vec![Operand::Reg(dst.into())],
         _ => unreachable!("sqrts should only affect integers and floats"),
     }
+}
+
+fn pow_to_raw(params: &PowParams) -> Vec<Operand> {
+    let dst = &params.dst;
+    let op1 = &params.op1;
+    let op2 = &params.op2;
+    vec![Operand::Reg(dst.into()), op1.into(), op2.into()]
 }
 
 fn ecall_to_raw(params: &ECallParams) -> Vec<Operand> {

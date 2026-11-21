@@ -277,6 +277,9 @@ impl VirtualMachine {
             Instruction::Exp(dst, op) => {
                 helper::execute_exp(dst, op, &mut self.state);
             }
+            Instruction::Pow(params) => {
+                helper::execute_pow(params, &mut self.state);
+            }
             Instruction::ECall(ecall) => helper::execute_ecall(
                 ecall,
                 &mut self.state,

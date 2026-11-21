@@ -979,6 +979,14 @@ impl<'m> Tx<'m> {
             let d = d.unwrap();
             let [a] = args.try_into().unwrap();
             self.out.push(Instruction::Exp(d.rf(), a.f()));
+        } else if n == "pow" || n == "powf" {
+            let d = d.unwrap();
+            let [a, b] = args.try_into().unwrap();
+            self.out.push(Instruction::Pow(PowParams {
+                dst: d.rf(),
+                op1: a.f(),
+                op2: b.f(),
+            }));
         } else if n.starts_with("llvm.smax") || n.starts_with("llvm.smin") {
             // return the larger / smaller value while comparing as signed values
             let d = d.unwrap();

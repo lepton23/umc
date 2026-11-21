@@ -20,7 +20,7 @@ use crate::vm::widths::{WidthBinaryOp, WidthOptions, WidthUnaryOp};
 use umc_model::instructions::{
     AddParams, AnyConsistentNumOp, AnyReg, AnySingleReg, AnySingleRegOrConstant, BinaryCondition,
     CompareParams, CompareToZero, ConsistentComparison, ConsistentOp, ECallParams, MovParams,
-    NotParams, OffsetOp, ResizeCast, ShiftParams, ShiftType, SimpleCast,
+    NotParams, OffsetOp, PowParams, ResizeCast, ShiftParams, ShiftType, SimpleCast,
 };
 use umc_model::reg_model::{
     FloatRegT, InstrRegT, MemRegT, Reg, RegOrConstant, RegTypeT, SignedRegT, UnsignedRegT,
@@ -637,6 +637,40 @@ pub fn execute_exp(dst: &Reg<FloatRegT>, op: &RegOrConstant<FloatRegT>, state: &
                 RegOrConstant::Const(op) => read_float::<f64>(&RegOrConstant::Const(*op), state),
             };
             state.store_prim(*dst, v.exp());
+        }
+        _ => {
+            unreachable!("Arbitrary width floats unsupported");
+        }
+    }
+}
+
+pub fn execute_pow(params: &PowParams, state: &mut RegState) {
+    let dst = params.dst;
+    let op1 = &params.op1;
+    let op2 = &params.op2;
+
+    match dst.width {
+        32 => {
+            let v1: f32 = match op1 {
+                RegOrConstant::Reg(op) => read_float::<f32>(&RegOrConstant::Reg(*op), state),
+                RegOrConstant::Const(op) => read_float::<f32>(&RegOrConstant::Const(*op), state),
+            };
+            let v2: f32 = match op2 {
+                RegOrConstant::Reg(op) => read_float::<f32>(&RegOrConstant::Reg(*op), state),
+                RegOrConstant::Const(op) => read_float::<f32>(&RegOrConstant::Const(*op), state),
+            };
+            state.store_prim(dst, v1.powf(v2));
+        }
+        64 => {
+            let v1: f64 = match op1 {
+                RegOrConstant::Reg(op) => read_float::<f64>(&RegOrConstant::Reg(*op), state),
+                RegOrConstant::Const(op) => read_float::<f64>(&RegOrConstant::Const(*op), state),
+            };
+            let v2: f64 = match op2 {
+                RegOrConstant::Reg(op) => read_float::<f64>(&RegOrConstant::Reg(*op), state),
+                RegOrConstant::Const(op) => read_float::<f64>(&RegOrConstant::Const(*op), state),
+            };
+            state.store_prim(dst, v1.powf(v2));
         }
         _ => {
             unreachable!("Arbitrary width floats unsupported");

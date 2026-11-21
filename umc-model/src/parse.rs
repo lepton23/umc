@@ -4,8 +4,8 @@
 use crate::instructions::{
     AddParams, AnyConsistentNumOp, AnyReg, AnySingleReg, AnySingleRegOrConstant, CompareParams,
     CompareToZero, ConsistentComparison, ConsistentOp, ECallParams, IntegerCast, IntegerFloatCast,
-    MovParams, NotParams, OffsetOp, ResizeCast, ShiftParams, SimpleCast, VectorBroadcastParams,
-    VectorVectorParams,
+    MovParams, NotParams, OffsetOp, PowParams, ResizeCast, ShiftParams, SimpleCast,
+    VectorBroadcastParams, VectorVectorParams,
 };
 use crate::operand::{Operand, RegOperand};
 use crate::reg_model::{
@@ -556,6 +556,38 @@ impl TryFrom<&[&Operand]> for ShiftParams {
                 size: p,
             },
             _ => return Err(InstructionValidateError::InvalidRegType { op_index: 1 }),
+        })
+    }
+}
+
+impl TryFrom<&[&Operand]> for PowParams {
+    type Error = InstructionValidateError;
+
+    fn try_from(value: &[&Operand]) -> Result<Self, Self::Error> {
+        let [p1, p2, p3] = ops(value)?;
+        let dst_reg = match p1 {
+            Operand::Reg(reg) => parse_any_single_reg(reg)
+                .map_err(|_| InstructionValidateError::InvalidRegType { op_index: 0 })?,
+            _ => return Err(InstructionValidateError::ExpectedDstReg),
+        };
+
+        let op1 = parse_any_reg_or_constant(p2)
+            .map_err(|_| InstructionValidateError::InvalidRegType { op_index: 1 })?;
+        let op2 = parse_any_reg_or_constant(p3)
+            .map_err(|_| InstructionValidateError::InvalidRegType { op_index: 2 })?;
+
+        let op1 = match op1 {
+            AnySingleRegOrConstant::Float(f) => f,
+            _ => return Err(InstructionValidateError::InvalidRegType { op_index: 1 }),
+        };
+        let op2 = match op2 {
+            AnySingleRegOrConstant::Float(f) => f,
+            _ => return Err(InstructionValidateError::InvalidRegType { op_index: 2 }),
+        };
+
+        Ok(match dst_reg {
+            AnySingleReg::Float(reg) => PowParams { dst: reg, op1, op2 },
+            _ => return Err(InstructionValidateError::InvalidRegType { op_index: 0 }),
         })
     }
 }
