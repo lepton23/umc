@@ -2,3 +2,6 @@ target/
 docs/book/
 # Compiled UMC files
 *.umb
+# Benchmark builds & results
+bench-build/
+bench-results/
