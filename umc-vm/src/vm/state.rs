@@ -46,6 +46,8 @@ where
 
 pub struct RegState<M: MemoryAddress> {
     u1s: FastPrimStore<bool>,
+    u8s: FastPrimStore<u8>,
+    u16s: FastPrimStore<u16>,
     u32s: FastPrimStore<u32>,
     u64s: HashMapStore<RegIndex, u64>,
     uas: HashMapStore<Reg<UnsignedRegT>, ArbitraryUnsignedInt>,
@@ -64,6 +66,8 @@ impl<M: MemoryAddress> RegState<M> {
     pub fn new() -> Self {
         Self {
             u1s: FastPrimStore::new_default(),
+            u8s: FastPrimStore::new_default(),
+            u16s: FastPrimStore::new_default(),
             u32s: FastPrimStore::new_default(),
             u64s: HashMapStore::new(),
             uas: HashMapStore::new(),
@@ -351,27 +355,35 @@ impl<M: MemoryAddress> StorePrim<bool, UnsignedRegT> for RegState<M> {
     }
 }
 
-impl<M: MemoryAddress> StorePrim<u32, UnsignedRegT> for RegState<M> {
-    fn read_prim(&self, k: Reg<UnsignedRegT>) -> Option<u32> {
-        debug_assert_eq!(k.width, u32::BITS);
-        self.u32s.read_prim(k.index)
-    }
+macro_rules! impl_fast_uint_store {
+    ($t:ty, $field:ident) => {
+        impl<M: MemoryAddress> StorePrim<$t, UnsignedRegT> for RegState<M> {
+            fn read_prim(&self, k: Reg<UnsignedRegT>) -> Option<$t> {
+                debug_assert_eq!(k.width, <$t>::BITS);
+                self.$field.read_prim(k.index)
+            }
 
-    fn store_prim(&mut self, k: Reg<UnsignedRegT>, val: u32) {
-        debug_assert_eq!(k.width, u32::BITS);
-        self.u32s.store_prim(k.index, val);
-    }
+            fn store_prim(&mut self, k: Reg<UnsignedRegT>, val: $t) {
+                debug_assert_eq!(k.width, <$t>::BITS);
+                self.$field.store_prim(k.index, val);
+            }
 
-    fn read_multi_prim(&self, k: Reg<UnsignedRegT>, count: usize) -> Option<&VecValue<u32>> {
-        debug_assert_eq!(k.width, u32::BITS);
-        self.u32s.fallback.read_multi(k.index, count)
-    }
+            fn read_multi_prim(&self, k: Reg<UnsignedRegT>, count: usize) -> Option<&VecValue<$t>> {
+                debug_assert_eq!(k.width, <$t>::BITS);
+                self.$field.fallback.read_multi(k.index, count)
+            }
 
-    fn store_multi_copy_prim(&mut self, k: Reg<UnsignedRegT>, vals: &[u32]) {
-        debug_assert_eq!(k.width, u32::BITS);
-        self.u32s.fallback.store_multi_copy(k.index, vals);
-    }
+            fn store_multi_copy_prim(&mut self, k: Reg<UnsignedRegT>, vals: &[$t]) {
+                debug_assert_eq!(k.width, <$t>::BITS);
+                self.$field.fallback.store_multi_copy(k.index, vals);
+            }
+        }
+    };
 }
+
+impl_fast_uint_store!(u8, u8s);
+impl_fast_uint_store!(u16, u16s);
+impl_fast_uint_store!(u32, u32s);
 
 impl<M: MemoryAddress> PrimNumStoreFor<UnsignedRegT, u64> for RegState<M> {
     const BITS: u32 = u64::BITS;

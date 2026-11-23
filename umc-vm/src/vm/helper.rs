@@ -299,6 +299,8 @@ pub fn execute_load(
 
     match reg {
         AnySingleReg::Unsigned(reg) => match reg.width {
+            u8::BITS => load_prim::<_, u8>(*reg, &address, state, memory),
+            u16::BITS => load_prim::<_, u16>(*reg, &address, state, memory),
             u32::BITS => load_prim::<_, u32>(*reg, &address, state, memory),
             u64::BITS => load_prim::<_, u64>(*reg, &address, state, memory),
             w => {
@@ -885,6 +887,8 @@ pub fn read_uint<T, S>(op: &RegOrConstant<UnsignedRegT>, state: &S) -> Option<T>
 where
     T: CastSingleUnsigned,
     S: StorePrim<bool, UnsignedRegT>
+        + StorePrim<u8, UnsignedRegT>
+        + StorePrim<u16, UnsignedRegT>
         + StorePrim<u32, UnsignedRegT>
         + StorePrim<u64, UnsignedRegT>
         + StoreFor<ArbitraryUnsignedInt, UnsignedRegT>,
@@ -892,6 +896,8 @@ where
     match op {
         RegOrConstant::Reg(num_reg) => match num_reg.width {
             1 => state.read_prim(*num_reg).map(|x: bool| x.cast_into()),
+            u8::BITS => state.read_prim(*num_reg).map(|x: u8| x.cast_into()),
+            u16::BITS => state.read_prim(*num_reg).map(|x: u16| x.cast_into()),
             u32::BITS => state.read_prim(*num_reg).map(|x: u32| x.cast_into()),
             u64::BITS => state.read_prim(*num_reg).map(|x: u64| x.cast_into()),
             _ => state
@@ -911,6 +917,14 @@ where
     T: CastSingleUnsigned,
 {
     Some(match reg.width {
+        u8::BITS => {
+            let v: &VecValue<u8> = state.read_multi_prim(*reg, length as usize)?;
+            v.as_slice().iter().map(|x| x.cast_into()).collect()
+        }
+        u16::BITS => {
+            let v: &VecValue<u16> = state.read_multi_prim(*reg, length as usize)?;
+            v.as_slice().iter().map(|x| x.cast_into()).collect()
+        }
         u32::BITS => {
             let v: &VecValue<u32> = state.read_multi_prim(*reg, length as usize)?;
             v.as_slice().iter().map(|x| x.cast_into()).collect()

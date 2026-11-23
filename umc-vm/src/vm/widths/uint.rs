@@ -17,6 +17,8 @@ use umc_model::reg_model::{Reg, RegOrConstant, UnsignedRegT};
 #[derive(Debug)]
 pub enum UIntWidth {
     U1,
+    U8,
+    U16,
     U32,
     U64,
     Arbitrary(RegWidth),
@@ -27,6 +29,8 @@ impl UIntWidth {
     pub fn from_width(width: RegWidth) -> Self {
         match width {
             1 => Self::U1,
+            u8::BITS => Self::U8,
+            u16::BITS => Self::U16,
             u32::BITS => Self::U32,
             u64::BITS => Self::U64,
             w => Self::Arbitrary(w),
@@ -48,12 +52,16 @@ impl UIntWidth {
     pub fn store_u64<S>(reg: Reg<UnsignedRegT>, state: &mut S, val: u64)
     where
         S: StorePrim<bool, UnsignedRegT>
+            + StorePrim<u8, UnsignedRegT>
+            + StorePrim<u16, UnsignedRegT>
             + StorePrim<u32, UnsignedRegT>
             + StorePrim<u64, UnsignedRegT>
             + StoreFor<ArbitraryUnsignedInt, UnsignedRegT>,
     {
         match Self::from_width(reg.width) {
             Self::U1 => state.store_prim(reg, (val & 0b1) == 1),
+            Self::U8 => state.store_prim(reg, val as u8),
+            Self::U16 => state.store_prim(reg, val as u16),
             Self::U32 => state.store_prim(reg, val as u32),
             Self::U64 => state.store_prim(reg, val as u64),
             Self::Arbitrary(w) => {
@@ -68,6 +76,8 @@ impl UIntWidth {
 impl<STATE> WidthOptions<STATE> for UIntWidth
 where
     STATE: StorePrim<bool, UnsignedRegT>
+        + StorePrim<u8, UnsignedRegT>
+        + StorePrim<u16, UnsignedRegT>
         + StorePrim<u32, UnsignedRegT>
         + StorePrim<u64, UnsignedRegT>
         + StoreFor<ArbitraryUnsignedInt, UnsignedRegT>,
@@ -89,6 +99,16 @@ where
             Self::U1 => {
                 let v1: bool = read_uint(p1, state).unwrap_or_default();
                 let v2: bool = read_uint(p2, state).unwrap_or_default();
+                v1.partial_cmp(&v2)
+            }
+            Self::U8 => {
+                let v1: u8 = read_uint(p1, state).unwrap_or_default();
+                let v2: u8 = read_uint(p2, state).unwrap_or_default();
+                v1.partial_cmp(&v2)
+            }
+            Self::U16 => {
+                let v1: u16 = read_uint(p1, state).unwrap_or_default();
+                let v2: u16 = read_uint(p2, state).unwrap_or_default();
                 v1.partial_cmp(&v2)
             }
             Self::U32 => {
@@ -121,6 +141,14 @@ where
                 let v: bool = state.read_prim(*reg).unwrap_or(false);
                 !v
             }
+            Self::U8 => {
+                let v: u8 = state.read_prim(*reg).unwrap_or(0);
+                v == 0
+            }
+            Self::U16 => {
+                let v: u16 = state.read_prim(*reg).unwrap_or(0);
+                v == 0
+            }
             Self::U32 => {
                 let v: u32 = state.read_prim(*reg).unwrap_or(0);
                 v == 0
@@ -148,6 +176,14 @@ where
                 let v: bool = state.read_prim(reg).unwrap_or(false);
                 memory.store_prim(v, address)
             }
+            Self::U8 => {
+                let v: u8 = state.read_prim(reg).unwrap_or(0);
+                memory.store_prim(v, address)
+            }
+            Self::U16 => {
+                let v: u16 = state.read_prim(reg).unwrap_or(0);
+                memory.store_prim(v, address)
+            }
             Self::U32 => {
                 let v: u32 = state.read_prim(reg).unwrap_or(0);
                 memory.store_prim(v, address)
@@ -168,10 +204,12 @@ where
 impl<STATE, OP> WidthUnaryOp<STATE, OP> for UIntWidth
 where
     STATE: StorePrim<bool, UnsignedRegT>
+        + StorePrim<u8, UnsignedRegT>
+        + StorePrim<u16, UnsignedRegT>
         + StorePrim<u32, UnsignedRegT>
         + StorePrim<u64, UnsignedRegT>
         + StoreFor<ArbitraryUnsignedInt, UnsignedRegT>,
-    OP: UnaryOp<bool> + UnaryOp<u32> + UnaryOp<u64> + UnaryOp<ArbitraryUnsignedInt>,
+    OP: UnaryOp<bool> + UnaryOp<u8> + UnaryOp<u16> + UnaryOp<u32> + UnaryOp<u64> + UnaryOp<ArbitraryUnsignedInt>,
 {
     type RT = UnsignedRegT;
 
@@ -185,6 +223,16 @@ where
         match self {
             Self::U1 => {
                 let mut v: bool = read_uint(&p, state).unwrap_or_default();
+                op.operate(&mut v);
+                state.store_prim(dst, v);
+            }
+            Self::U8 => {
+                let mut v: u8 = read_uint(&p, state).unwrap_or_default();
+                op.operate(&mut v);
+                state.store_prim(dst, v);
+            }
+            Self::U16 => {
+                let mut v: u16 = read_uint(&p, state).unwrap_or_default();
                 op.operate(&mut v);
                 state.store_prim(dst, v);
             }
@@ -213,10 +261,12 @@ where
 impl<STATE, OP> WidthBinaryOp<STATE, OP> for UIntWidth
 where
     STATE: StorePrim<bool, UnsignedRegT>
+        + StorePrim<u8, UnsignedRegT>
+        + StorePrim<u16, UnsignedRegT>
         + StorePrim<u32, UnsignedRegT>
         + StorePrim<u64, UnsignedRegT>
         + StoreFor<ArbitraryUnsignedInt, UnsignedRegT>,
-    OP: BinaryOp<bool> + BinaryOp<u32> + BinaryOp<u64> + BinaryOp<ArbitraryUnsignedInt>,
+    OP: BinaryOp<bool> + BinaryOp<u8> + BinaryOp<u16> + BinaryOp<u32> + BinaryOp<u64> + BinaryOp<ArbitraryUnsignedInt>,
 {
     type RT = UnsignedRegT;
 
@@ -233,6 +283,18 @@ where
             Self::U1 => {
                 let mut v1: bool = read_uint(p1, state).unwrap_or_default();
                 let v2: bool = read_uint(p2, state).unwrap_or_default();
+                operation.operate(&mut v1, &v2);
+                state.store_prim(dst, v1);
+            }
+            Self::U8 => {
+                let mut v1: u8 = read_uint(p1, state).unwrap_or_default();
+                let v2: u8 = read_uint(p2, state).unwrap_or_default();
+                operation.operate(&mut v1, &v2);
+                state.store_prim(dst, v1);
+            }
+            Self::U16 => {
+                let mut v1: u16 = read_uint(p1, state).unwrap_or_default();
+                let v2: u16 = read_uint(p2, state).unwrap_or_default();
                 operation.operate(&mut v1, &v2);
                 state.store_prim(dst, v1);
             }
@@ -274,6 +336,24 @@ where
                     .cloned()
                     .unwrap_or(VecValue::from_repeated_default(length));
                 let v: bool = read_uint(params.value_param(), state).unwrap_or_default();
+                compute_broadcast(&mut vector, &v, op, params.is_reversed());
+                state.store_multi_copy_prim(*params.dst(), vector.as_slice());
+            }
+            Self::U8 => {
+                let mut vector: VecValue<u8> = state
+                    .read_multi_prim(params.vec_param(), length)
+                    .cloned()
+                    .unwrap_or(VecValue::from_repeated_default(length));
+                let v: u8 = read_uint(params.value_param(), state).unwrap_or_default();
+                compute_broadcast(&mut vector, &v, op, params.is_reversed());
+                state.store_multi_copy_prim(*params.dst(), vector.as_slice());
+            }
+            Self::U16 => {
+                let mut vector: VecValue<u16> = state
+                    .read_multi_prim(params.vec_param(), length)
+                    .cloned()
+                    .unwrap_or(VecValue::from_repeated_default(length));
+                let v: u16 = read_uint(params.value_param(), state).unwrap_or_default();
                 compute_broadcast(&mut vector, &v, op, params.is_reversed());
                 state.store_multi_copy_prim(*params.dst(), vector.as_slice());
             }
@@ -328,6 +408,24 @@ where
                     .unwrap_or(VecValue::from_repeated_default(length));
                 let param: Option<&VecValue<bool>> = state.read_multi_prim(params.p2(), length);
                 compute_vector(&mut vector, param, &false, op);
+                state.store_multi_copy_prim(*params.dst(), vector.as_slice());
+            }
+            Self::U8 => {
+                let mut vector: VecValue<u8> = state
+                    .read_multi_prim(params.p1(), length)
+                    .cloned()
+                    .unwrap_or(VecValue::from_repeated_default(length));
+                let param: Option<&VecValue<u8>> = state.read_multi_prim(params.p2(), length);
+                compute_vector(&mut vector, param, &0, op);
+                state.store_multi_copy_prim(*params.dst(), vector.as_slice());
+            }
+            Self::U16 => {
+                let mut vector: VecValue<u16> = state
+                    .read_multi_prim(params.p1(), length)
+                    .cloned()
+                    .unwrap_or(VecValue::from_repeated_default(length));
+                let param: Option<&VecValue<u16>> = state.read_multi_prim(params.p2(), length);
+                compute_vector(&mut vector, param, &0, op);
                 state.store_multi_copy_prim(*params.dst(), vector.as_slice());
             }
             Self::U32 => {

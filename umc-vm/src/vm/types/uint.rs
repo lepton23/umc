@@ -253,6 +253,86 @@ impl UMCBitwise for bool {
     }
 }
 
+impl UMCArithmetic for u8 {
+    fn add(&mut self, rhs: &Self) {
+        *self = self.wrapping_add(*rhs)
+    }
+
+    fn sub(&mut self, rhs: &Self) {
+        *self = self.wrapping_sub(*rhs)
+    }
+
+    fn modulo(&mut self, rhs: &Self) {
+        *self = *self % *rhs;
+    }
+
+    fn mul(&mut self, rhs: &Self) {
+        *self = self.wrapping_mul(*rhs);
+    }
+
+    fn div(&mut self, rhs: &Self) {
+        *self = *self / rhs;
+    }
+}
+
+impl UMCBitwise for u8 {
+    fn not(&mut self) {
+        *self = !*self
+    }
+
+    fn or(&mut self, rhs: &Self) {
+        self.bitor_assign(rhs);
+    }
+
+    fn and(&mut self, rhs: &Self) {
+        self.bitand_assign(rhs);
+    }
+
+    fn xor(&mut self, rhs: &Self) {
+        self.bitxor_assign(rhs);
+    }
+}
+
+impl UMCArithmetic for u16 {
+    fn add(&mut self, rhs: &Self) {
+        *self = self.wrapping_add(*rhs)
+    }
+
+    fn sub(&mut self, rhs: &Self) {
+        *self = self.wrapping_sub(*rhs)
+    }
+
+    fn modulo(&mut self, rhs: &Self) {
+        *self = *self % *rhs;
+    }
+
+    fn mul(&mut self, rhs: &Self) {
+        *self = self.wrapping_mul(*rhs);
+    }
+
+    fn div(&mut self, rhs: &Self) {
+        *self = *self / rhs;
+    }
+}
+
+impl UMCBitwise for u16 {
+    fn not(&mut self) {
+        *self = !*self
+    }
+
+    fn or(&mut self, rhs: &Self) {
+        self.bitor_assign(rhs);
+    }
+
+    fn and(&mut self, rhs: &Self) {
+        self.bitand_assign(rhs);
+    }
+
+    fn xor(&mut self, rhs: &Self) {
+        self.bitxor_assign(rhs);
+    }
+}
+
 impl UMCArithmetic for u32 {
     fn add(&mut self, rhs: &Self) {
         *self = self.wrapping_add(*rhs)
