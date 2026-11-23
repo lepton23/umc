@@ -193,6 +193,24 @@ pub extern "C" fn jit_frem_f32(a: u64, b: u64) -> u64 {
         .to_bits() as u64
 }
 
+pub extern "C" fn jit_exp_f32(a: u64) -> u64 {
+    f32::from_bits(a as u32).exp().to_bits() as u64
+}
+
+pub extern "C" fn jit_exp_f64(a: u64) -> u64 {
+    f64::from_bits(a).exp().to_bits() as u64
+}
+
+pub extern "C" fn jit_pow_f32(a: u64, b: u64) -> u64 {
+    f32::from_bits(a as u32)
+        .powf(f32::from_bits(b as u32))
+        .to_bits() as u64
+}
+
+pub extern "C" fn jit_pow_f64(a: u64, b: u64) -> u64 {
+    f64::from_bits(a).powf(f64::from_bits(b)).to_bits() as u64
+}
+
 // operand kinds for jit_num_cast, or'd with the op width (32 or 64)
 pub const CAST_U: u64 = 0;
 pub const CAST_I: u64 = 1;

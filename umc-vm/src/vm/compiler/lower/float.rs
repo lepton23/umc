@@ -9,7 +9,9 @@ use super::operand::JitReg;
 use super::{Ctx, Flow};
 use crate::vm::compiler::CompileError;
 use crate::vm::compiler::FrameSlot;
-use crate::vm::compiler::bridge::{jit_frem_f32, jit_frem_f64};
+use crate::vm::compiler::bridge::{
+    jit_exp_f32, jit_exp_f64, jit_frem_f32, jit_frem_f64, jit_pow_f32, jit_pow_f64,
+};
 use crate::vm::compiler::emit::*;
 
 // interpreter only has f32 and f64
@@ -157,5 +159,43 @@ pub(super) fn sqrt<E: Emitter>(
     cx.e.fsqrt(FTmp::F0, w);
     let d = cx.layout.write_slot(FloatRegT::key(dst));
     cx.e.fstore_slot(d, FTmp::F0, w);
+    Ok(Flow::Next)
+}
+
+/// float exp
+pub(super) fn exp<E: Emitter>(
+    cx: &mut Ctx<E>,
+    dst: &Reg<FloatRegT>,
+    op: &RegOrConstant<FloatRegT>,
+) -> Result<Flow, CompileError> {
+    let w = fwidth(cx, dst.width)?;
+    load_bits(cx, op, Tmp::T0, w)?;
+    let f = match w {
+        OpWidth::W32 => jit_exp_f32 as *const () as usize,
+        OpWidth::W64 => jit_exp_f64 as *const () as usize,
+    };
+    cx.e.call_host(f, &[Arg::Tmp(Tmp::T0)]);
+    let d = cx.layout.write_slot(FloatRegT::key(dst));
+    cx.e.store_slot(d, Tmp::T0, w);
+    Ok(Flow::Next)
+}
+
+/// float pow
+pub(super) fn pow<E: Emitter>(
+    cx: &mut Ctx<E>,
+    dst: &Reg<FloatRegT>,
+    lhs: &RegOrConstant<FloatRegT>,
+    rhs: &RegOrConstant<FloatRegT>,
+) -> Result<Flow, CompileError> {
+    let w = fwidth(cx, dst.width)?;
+    load_bits(cx, lhs, Tmp::T0, w)?;
+    load_bits(cx, rhs, Tmp::T1, w)?;
+    let f = match w {
+        OpWidth::W32 => jit_pow_f32 as *const () as usize,
+        OpWidth::W64 => jit_pow_f64 as *const () as usize,
+    };
+    cx.e.call_host(f, &[Arg::Tmp(Tmp::T0), Arg::Tmp(Tmp::T1)]);
+    let d = cx.layout.write_slot(FloatRegT::key(dst));
+    cx.e.store_slot(d, Tmp::T0, w);
     Ok(Flow::Next)
 }
