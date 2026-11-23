@@ -55,26 +55,28 @@ if (( ${#files[@]} == 0 )); then
 fi
 
 # ---- main work --------------------------------------------------------
-mkdir -p ./polybench-output ./progs/translated
+mkdir -p ./polybench-output ./progs/translated ./polybench-output/phis ./polybench-output/no-phis ./progs/translated/phis ./progs/translated/no-phis
 
 flags=(-O2 -fno-vectorize -fno-slp-vectorize -fno-unroll-loops -fno-builtin -DPOLYBENCH_DUMP_ARRAYS -D${dataset}_DATASET -I "$root/utilities")
+
+RUSTFLAGS="-Aunused -Adead_code" cargo build -p umc-llvm --release
 
 for file in "${files[@]}"; do
         # Skip the timing harness when scanning a directory, but honour
         # it if the user named that exact file with -p.
-        if [[ -d $target && $file == "$root/utilities/"* ]]; then
+	if [[ -d $target && ($file == "$root/utilities/"* || $file == "$root/medley/nussinov/Nussinov.orig.c" ) ]]; then
                 continue
         fi
 
         base=$(basename "$file" .c)
         printf 'Translating %s\n' "$file"
 
-        clang-19 "${flags[@]}" -emit-llvm -c "$file" -o "./polybench-output/$base.bc"
-        clang-19 "${flags[@]}" -emit-llvm -S "$file" -o "./polybench-output/$base.ll"
+        clang-19 "${flags[@]}" -emit-llvm -c "$file" -o "./polybench-output/phis/$base.bc"
+        clang-19 "${flags[@]}" -emit-llvm -S "$file" -o "./polybench-output/phis/$base.ll"
 
-        opt-19 -passes='reg2mem' "./polybench-output/$base.bc" -o "./polybench-output/$base-no-phis.bc"
-        llvm-dis-19 "./polybench-output/$base-no-phis.bc" -o "./polybench-output/$base-no-phis.ll"
+        opt-19 -passes='reg2mem' "./polybench-output/phis/$base.bc" -o "./polybench-output/no-phis/$base.bc"
+        llvm-dis-19 "./polybench-output/no-phis/$base.bc" -o "./polybench-output/no-phis/$base.ll"
 
-        cargo run -q -p umc-llvm -- "./polybench-output/$base.bc" -o "./progs/translated/$base.umc"
-        cargo run -q -p umc-llvm -- "./polybench-output/$base-no-phis.bc" -o "./progs/translated/$base-no-phis.umc"
+        RUSTFLAGS="-Aunused -Adead_code" cargo run -q -p umc-llvm --release -- "./polybench-output/phis/$base.bc" -o "./progs/translated/phis/$base.umc"
+        RUSTFLAGS="-Aunused -Adead_code" cargo run -q -p umc-llvm --release -- "./polybench-output/no-phis/$base.bc" -o "./progs/translated/no-phis/$base.umc"
 done

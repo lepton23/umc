@@ -357,7 +357,7 @@ impl<'m> Tx<'m> {
     fn bits(&self, op: &Operand) -> u32 {
         match &*self.module.type_of(op) {
             Type::IntegerType { bits } => *bits,
-            Type::PointerType { .. } => self.ptr_bytes * 8,
+            Type::PointerType { .. } => (self.ptr_bytes * 8).try_into().unwrap(),
             t => panic!("expected integer, got {t:?}"),
         }
     }
