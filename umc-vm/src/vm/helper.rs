@@ -402,6 +402,14 @@ pub fn execute_simple_cast(cast: &SimpleCast, state: &mut RegState) {
             _ => panic!("Only 32-bit or 64-bit floats supported"),
         },
         SimpleCast::IgnoreSigned(c) => match c.width() {
+            8 => {
+                let v: i8 = read_int(c.from(), state);
+                state.store_prim(*c.dst(), v as u8);
+            }
+            16 => {
+                let v: i16 = read_int(c.from(), state);
+                state.store_prim(*c.dst(), v as u16);
+            }
             32 => {
                 let v: i32 = read_int(c.from(), state);
                 state.store_prim(*c.dst(), v as u32);
@@ -415,6 +423,14 @@ pub fn execute_simple_cast(cast: &SimpleCast, state: &mut RegState) {
             }
         },
         SimpleCast::AddSign(c) => match c.width() {
+            8 => {
+                let v: u8 = read_uint(c.from(), state).unwrap_or_default();
+                state.store_prim(*c.dst(), v as i8);
+            }
+            16 => {
+                let v: u16 = read_uint(c.from(), state).unwrap_or_default();
+                state.store_prim(*c.dst(), v as i16);
+            }
             32 => {
                 let v: u32 = read_uint(c.from(), state).unwrap_or_default();
                 state.store_prim(*c.dst(), v as i32);
