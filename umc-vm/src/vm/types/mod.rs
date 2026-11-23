@@ -113,11 +113,11 @@ impl BinaryBitwiseOp {}
 
 /// Any non-vector type that can be cast into from an unsigned integer
 pub trait CastSingleUnsigned:
-    CastFrom<bool> + CastFrom<u32> + CastFrom<u64> + CastFrom<ArbitraryUnsignedInt>
+    CastFrom<bool> + CastFrom<u8> + CastFrom<u16> + CastFrom<u32> + CastFrom<u64> + CastFrom<ArbitraryUnsignedInt>
 {
 }
 impl<T> CastSingleUnsigned for T where
-    T: CastFrom<bool> + CastFrom<u32> + CastFrom<u64> + CastFrom<ArbitraryUnsignedInt>
+    T: CastFrom<bool> + CastFrom<u8> + CastFrom<u16> + CastFrom<u32> + CastFrom<u64> + CastFrom<ArbitraryUnsignedInt>
 {
 }
 
