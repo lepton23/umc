@@ -481,10 +481,10 @@
 	mod u32:23, u32:22, #20
 	cast i32:32, u32:23
 	seq u1:30, i32:32, #0
-	bnz .MAIN__141, u1:30
+	bnz .MAIN__144, u1:30
 .MAIN____CRIT_EDGE18:
-	jmp .MAIN__141
-.MAIN__141:
+	jmp .MAIN__144
+.MAIN__144:
 	load i64:115, m:24
 	load i64:116, m:26
 	load m:125, m:53

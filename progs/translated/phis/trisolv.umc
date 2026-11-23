@@ -119,9 +119,9 @@
 	mod u16:17, u16:16, #20
 	cast i16:17, u16:17
 	seq u1:21, i16:17, #0
-	bnz .MAIN__66, u1:21
-	jmp .MAIN__66
-.MAIN__66:
+	bnz .MAIN__69, u1:21
+	jmp .MAIN__69
+.MAIN__69:
 	add i64:29, i64:28, #1
 	seq u1:22, i64:29, #400
 	bnz .MAIN__72, u1:22

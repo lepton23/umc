@@ -6,8 +6,8 @@ root="$HOME/PolyBenchC-4.2.1"
 export LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
 
 # Wasm toolchain (apt install lld-19 wasi-libc libclang-rt-19-dev-wasm32)
-wasi_sysroot="${WASI_SYSROOT:-usr/share/wasi-sysroot}"
-wasm_triple="${WASM_TRIPLE:-wasm32-wasi}"
+wasi_sysroot="${WASI_SYSROOT:-}"
+wasm_triple="${WASM_TRIPLE:-}"
 
 usage() {
         echo "Usage: $0 [-p path] [-d dataset] [-W]" >&2
@@ -62,10 +62,38 @@ if (( ${#files[@]} == 0 )); then
 fi
 
 # ---- wasm preflight ---------------------------------------------------
+# Two possible layouts:
+#   wasi-sdk style:  <sysroot>/include/<triple>, <sysroot>/lib/<triple>  -> needs --sysroot
+#   Debian/Ubuntu:   /usr/include/<triple>,      /usr/lib/<triple>       -> clang finds it itself
+sysroot_flag=()
 if (( build_wasm )); then
-        if [[ ! -d $wasi_sysroot ]]; then
-                echo "Error: WASI sysroot not found at '$wasi_sysroot' (set WASI_SYSROOT, or use -W)" >&2
+        if [[ -z $wasi_sysroot ]]; then
+                for d in /usr/share/wasi-sysroot /opt/wasi-sdk/share/wasi-sysroot; do
+                        [[ -d $d ]] && { wasi_sysroot=$d; break; }
+                done
+        fi
+        lib_base=${wasi_sysroot:+$wasi_sysroot/lib}
+        lib_base=${lib_base:-/usr/lib}
+ 
+        if [[ -z $wasm_triple ]]; then
+                for t in wasm32-wasi wasm32-wasip1; do
+                        [[ -f $lib_base/$t/libc.a ]] && { wasm_triple=$t; break; }
+                done
+        fi
+        if [[ -z $wasm_triple || ! -f $lib_base/$wasm_triple/libc.a ]]; then
+                echo "Error: no wasi-libc found (looked for $lib_base/wasm32-wasi{,p1}/libc.a)." >&2
+                echo "       Install wasi-libc, set WASI_SYSROOT, or use -W." >&2
                 exit 1
+        fi
+        [[ -n $wasi_sysroot ]] && sysroot_flag=(--sysroot="$wasi_sysroot")
+        echo "Wasm: target $wasm_triple, libc in $lib_base/$wasm_triple" >&2
+ 
+        if [[ ! -f $lib_base/$wasm_triple/libwasi-emulated-process-clocks.a ]]; then
+                echo "Error: libwasi-emulated-process-clocks.a missing from $lib_base/$wasm_triple" >&2
+                exit 1
+        fi
+        if ! compgen -G "/usr/lib/llvm-19/lib/clang/19/lib/*/libclang_rt.builtins-wasm32.a" >/dev/null; then
+                echo "Warning: libclang_rt.builtins-wasm32.a not found; install libclang-rt-19-dev-wasm32" >&2
         fi
         if ! command -v wasm-ld-19 >/dev/null && [[ ! -x /usr/lib/llvm-19/bin/wasm-ld ]]; then
                 echo "Error: wasm-ld for LLVM 19 not found (install lld-19, or use -W)" >&2
@@ -82,8 +110,8 @@ echo "$dataset" > "$ir/DATASET"
 flags=(-O2 -fno-vectorize -fno-slp-vectorize -fno-unroll-loops -fno-builtin -DPOLYBENCH_DUMP_ARRAYS -D${dataset}_DATASET -I "$root/utilities")
 
 # wasi-libc's <sys/resource.h> needs process clock emulation requested
-wasm_cflags=(--target="$wasm_triple" --sysroot="$wasi_sysroot" -D_WASI_EMULATED_PROCESS_CLOCKS)
-wasm_ldflags=(--target="$wasm_triple" --sysroot="$wasi_sysroot" -Wl,-z,stack_size=$((8 * 1024 * 1024)) -lm -lwasi-emulated-process-clocks)
+wasm_cflags=(--target="$wasm_triple" --sysroot="${sysroot_flag[@]}" -D_WASI_EMULATED_PROCESS_CLOCKS)
+wasm_ldflags=(--target="$wasm_triple" --sysroot="${sysroot_flag[@]}" -Wl,-z,stack-size=$((8 * 1024 * 1024)) -lm -lwasi-emulated-process-clocks)
 
 RUSTFLAGS="-Aunused -Adead_code" cargo build -p umc-llvm --release
 

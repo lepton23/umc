@@ -231,9 +231,9 @@
 	mod u16:17, u16:16, #20
 	cast i16:17, u16:17
 	seq u1:25, i16:17, #0
-	bnz .MAIN__124, u1:25
-	jmp .MAIN__124
-.MAIN__124:
+	bnz .MAIN__121, u1:25
+	jmp .MAIN__121
+.MAIN__121:
 	mul i64:72, i64:35, #8
 	add m:52, m:22, i64:72
 	load f64:48, m:52

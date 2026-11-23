@@ -173,9 +173,9 @@
 .MAIN__84:
 	mod i32:40, i32:39, #20
 	seq u1:26, i32:40, #0
-	bnz .MAIN__89, u1:26
-	jmp .MAIN__89
-.MAIN__89:
+	bnz .MAIN__92, u1:26
+	jmp .MAIN__92
+.MAIN__92:
 	mul i64:52, i64:32, #2000
 	add m:33, m:18, i64:52
 	mul i64:53, i64:33, #4

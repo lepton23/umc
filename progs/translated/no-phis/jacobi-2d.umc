@@ -313,10 +313,10 @@
 	mod u32:20, u32:19, #20
 	cast i32:30, u32:20
 	seq u1:23, i32:30, #0
-	bnz .MAIN__98, u1:23
+	bnz .MAIN__95, u1:23
 .MAIN____CRIT_EDGE9:
-	jmp .MAIN__98
-.MAIN__98:
+	jmp .MAIN__95
+.MAIN__95:
 	load i64:67, m:19
 	load i64:68, m:21
 	load m:91, m:39

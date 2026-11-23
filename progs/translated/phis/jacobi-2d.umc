@@ -179,9 +179,9 @@
 	mod u32:20, u32:19, #20
 	cast i32:26, u32:20
 	seq u1:23, i32:26, #0
-	bnz .MAIN__107, u1:23
-	jmp .MAIN__107
-.MAIN__107:
+	bnz .MAIN__104, u1:23
+	jmp .MAIN__104
+.MAIN__104:
 	mul i64:64, i64:30, #2000
 	add m:43, m:17, i64:64
 	mul i64:65, i64:32, #8

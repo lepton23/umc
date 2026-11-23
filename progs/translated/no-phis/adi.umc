@@ -730,10 +730,10 @@
 	mod u32:18, u32:17, #20
 	cast i32:27, u32:18
 	seq u1:33, i32:27, #0
-	bnz .MAIN__205, u1:33
+	bnz .MAIN__202, u1:33
 .MAIN____CRIT_EDGE18:
-	jmp .MAIN__205
-.MAIN__205:
+	jmp .MAIN__202
+.MAIN__202:
 	load i64:130, m:19
 	load i64:131, m:21
 	load m:206, m:61

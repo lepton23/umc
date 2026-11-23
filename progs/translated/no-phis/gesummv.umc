@@ -220,10 +220,10 @@
 	mod u8:17, u8:16, #20
 	cast i8:17, u8:17
 	seq u1:20, i8:17, #0
-	bnz .MAIN__66, u1:20
+	bnz .MAIN__63, u1:20
 .MAIN____CRIT_EDGE5:
-	jmp .MAIN__66
-.MAIN__66:
+	jmp .MAIN__63
+.MAIN__63:
 	load i64:46, m:18
 	load m:71, m:28
 	mul i64:73, i64:46, #8

@@ -226,10 +226,10 @@
 	mod u16:17, u16:16, #20
 	cast i16:17, u16:17
 	seq u1:21, i16:17, #0
-	bnz .MAIN__58, u1:21
+	bnz .MAIN__61, u1:21
 .MAIN____CRIT_EDGE8:
-	jmp .MAIN__58
-.MAIN__58:
+	jmp .MAIN__61
+.MAIN__61:
 	load i64:56, m:18
 	add i64:57, i64:56, #1
 	store m:17, i64:57

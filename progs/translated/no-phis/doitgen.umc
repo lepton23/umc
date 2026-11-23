@@ -39,7 +39,7 @@
 	sgt u1:16, i32:16, #0
 	bnz .KERNEL_DOITGEN__8, u1:16
 .KERNEL_DOITGEN____CRIT_EDGE:
-	jmp .KERNEL_DOITGEN____CRIT_EDGE13
+	jmp .KERNEL_DOITGEN__43
 .KERNEL_DOITGEN__8:
 	sgt u1:17, i32:17, #0
 	store m:34, u1:17
@@ -69,7 +69,7 @@
 	load u1:19, m:34
 	bnz .KERNEL_DOITGEN____CRIT_EDGE1, u1:19
 .KERNEL_DOITGEN____CRIT_EDGE2:
-	jmp .KERNEL_DOITGEN____CRIT_EDGE11
+	jmp .KERNEL_DOITGEN__40
 .KERNEL_DOITGEN____CRIT_EDGE1:
 	mov i64:55, #0
 	store m:39, i64:55
@@ -186,24 +186,24 @@
 	load i64:46, m:20
 	load i64:47, m:31
 	seq u1:25, i64:46, i64:47
-	bnz .KERNEL_DOITGEN____CRIT_EDGE11, u1:25
+	bnz .KERNEL_DOITGEN__40, u1:25
 .KERNEL_DOITGEN____CRIT_EDGE12:
 	load i64:48, m:20
 	store m:39, i64:48
 	jmp .KERNEL_DOITGEN__16
-.KERNEL_DOITGEN____CRIT_EDGE11:
+.KERNEL_DOITGEN__40:
 	load i64:49, m:28
 	add i64:50, i64:49, #1
 	store m:19, i64:50
 	load i64:51, m:19
 	load i64:52, m:32
 	seq u1:26, i64:51, i64:52
-	bnz .KERNEL_DOITGEN____CRIT_EDGE13, u1:26
+	bnz .KERNEL_DOITGEN__43, u1:26
 .KERNEL_DOITGEN____CRIT_EDGE14:
 	load i64:53, m:19
 	store m:40, i64:53
 	jmp .KERNEL_DOITGEN__15
-.KERNEL_DOITGEN____CRIT_EDGE13:
+.KERNEL_DOITGEN__43:
 	jmp n:16
 .FN_MAIN:
 	mov i32:21, i32:0
@@ -540,10 +540,10 @@
 	mod u32:27, u32:26, #20
 	cast i32:30, u32:27
 	seq u1:37, i32:30, #0
-	bnz .MAIN__82, u1:37
+	bnz .MAIN__79, u1:37
 .MAIN____CRIT_EDGE13:
-	jmp .MAIN__82
-.MAIN__82:
+	jmp .MAIN__79
+.MAIN__79:
 	load i64:143, m:52
 	load i64:144, m:54
 	load i64:145, m:56

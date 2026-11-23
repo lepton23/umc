@@ -154,10 +154,10 @@
 	mod u16:17, u16:16, #20
 	cast i16:17, u16:17
 	seq u1:20, i16:17, #0
-	bnz .MAIN__59, u1:20
+	bnz .MAIN__56, u1:20
 .MAIN____CRIT_EDGE6:
-	jmp .MAIN__59
-.MAIN__59:
+	jmp .MAIN__56
+.MAIN__56:
 	load i64:32, m:18
 	load m:55, m:25
 	mul i64:51, i64:32, #8

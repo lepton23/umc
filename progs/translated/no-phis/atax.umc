@@ -241,10 +241,10 @@
 	mod u16:17, u16:16, #20
 	cast i16:17, u16:17
 	seq u1:23, i16:17, #0
-	bnz .MAIN__63, u1:23
+	bnz .MAIN__66, u1:23
 .MAIN____CRIT_EDGE11:
-	jmp .MAIN__63
-.MAIN__63:
+	jmp .MAIN__66
+.MAIN__66:
 	load i64:54, m:18
 	load m:70, m:31
 	mul i64:82, i64:54, #8

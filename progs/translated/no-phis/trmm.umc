@@ -62,7 +62,7 @@
 	store m:46, i64:82
 	jmp .MAIN__7
 .MAIN____CRIT_EDGE:
-	jmp .MAIN__16
+	jmp .MAIN____CRIT_EDGE2
 .MAIN__7:
 	load i64:18, m:46
 	load i64:19, m:35
@@ -86,12 +86,12 @@
 	load i64:23, m:34
 	load i64:24, m:35
 	seq u1:17, i64:23, i64:24
-	bnz .MAIN__16, u1:17
+	bnz .MAIN____CRIT_EDGE2, u1:17
 .MAIN____CRIT_EDGE3:
 	load i64:25, m:34
 	store m:46, i64:25
 	jmp .MAIN__7
-.MAIN__16:
+.MAIN____CRIT_EDGE2:
 	load i64:26, m:35
 	load m:52, m:37
 	mul i64:85, i64:26, #1600
@@ -267,10 +267,10 @@
 	mod u32:23, u32:22, #20
 	cast i32:25, u32:23
 	seq u1:25, i32:25, #0
-	bnz .MAIN__66, u1:25
+	bnz .MAIN__63, u1:25
 .MAIN____CRIT_EDGE13:
-	jmp .MAIN__66
-.MAIN__66:
+	jmp .MAIN__63
+.MAIN__63:
 	load i64:69, m:19
 	load i64:70, m:21
 	load m:69, m:36

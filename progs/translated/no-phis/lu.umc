@@ -456,7 +456,7 @@
 	bnz .MAIN____CRIT_EDGE20, u1:32
 	jmp .MAIN__93
 .MAIN____CRIT_EDGE20:
-	jmp .MAIN__105
+	jmp .MAIN____CRIT_EDGE21
 .MAIN__93:
 	load i64:102, m:28
 	load i64:103, m:38
@@ -502,14 +502,14 @@
 	load i64:108, m:24
 	load i64:109, m:38
 	seq u1:33, i64:108, i64:109
-	bnz .MAIN__105, u1:33
+	bnz .MAIN____CRIT_EDGE21, u1:33
 .MAIN____CRIT_EDGE22:
 	load i64:110, m:24
 	load f64:47, m:25
 	store m:61, f64:47
 	store m:62, i64:110
 	jmp .MAIN__96
-.MAIN__105:
+.MAIN____CRIT_EDGE21:
 	load i64:111, m:28
 	add i64:112, i64:111, #1
 	store m:23, i64:112
@@ -553,10 +553,10 @@
 	mod u32:17, u32:16, #20
 	cast i32:23, u32:17
 	seq u1:36, i32:23, #0
-	bnz .MAIN__126, u1:36
+	bnz .MAIN__123, u1:36
 .MAIN____CRIT_EDGE25:
-	jmp .MAIN__126
-.MAIN__126:
+	jmp .MAIN__123
+.MAIN__123:
 	load i64:126, m:19
 	load i64:127, m:21
 	load m:129, m:58

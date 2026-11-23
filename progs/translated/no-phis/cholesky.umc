@@ -122,7 +122,7 @@
 	slt u1:17, u64:17, #399
 	bnz .MAIN____CRIT_EDGE1, u1:17
 .MAIN____CRIT_EDGE2:
-	jmp .MAIN____CRIT_EDGE3
+	jmp .MAIN__21
 .MAIN____CRIT_EDGE1:
 	load i64:27, m:56
 	store m:77, i64:27
@@ -140,12 +140,12 @@
 	store m:53, i64:30
 	load i64:31, m:53
 	seq u1:18, i64:31, #400
-	bnz .MAIN____CRIT_EDGE3, u1:18
+	bnz .MAIN__21, u1:18
 .MAIN____CRIT_EDGE4:
 	load i64:32, m:53
 	store m:77, i64:32
 	jmp .MAIN__17
-.MAIN____CRIT_EDGE3:
+.MAIN__21:
 	load i64:33, m:57
 	load m:86, m:58
 	mul i64:142, i64:33, #3200
