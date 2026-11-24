@@ -299,6 +299,7 @@ pub fn execute_load(
 
     match reg {
         AnySingleReg::Unsigned(reg) => match reg.width {
+            1 => load_prim::<_, bool>(*reg, &address, state, memory),
             u8::BITS => load_prim::<_, u8>(*reg, &address, state, memory),
             u16::BITS => load_prim::<_, u16>(*reg, &address, state, memory),
             u32::BITS => load_prim::<_, u32>(*reg, &address, state, memory),
