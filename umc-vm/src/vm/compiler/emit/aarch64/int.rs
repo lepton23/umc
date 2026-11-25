@@ -63,7 +63,65 @@ impl ArmEmitter {
     }
 }
 
+impl ArmEmitter {
+    /// SCRATCH = data ptr of block, branches to fail unless offset + bytes <= block len
+    fn mem_entry(&mut self, block: Tmp, offset: Tmp, bytes: u8, fail: Label) {
+        let st = &mut self.labels[fail.0 as usize];
+        st.referenced = true;
+        let dl = st.dl;
+        let (b, o) = (reg(block), reg(offset));
+        arm!(self.ops
+            // NULL block is u64::MAX so it fails here too
+            ; ldr X(SCRATCH), [X(MEM_BASE), #TABLE_LEN_OFF]
+            ; cmp X(b), X(SCRATCH)
+            ; b.hs =>dl
+            ; ldr X(SCRATCH), [X(MEM_BASE), #TABLE_PTR_OFF]
+            ; add X(SCRATCH), X(SCRATCH), X(b), LSL #4
+            ; ldr X(SCRATCH2), [X(SCRATCH), #8]
+            // offset < len first so offset + bytes can't wrap
+            ; cmp X(o), X(SCRATCH2)
+            ; b.hs =>dl
+            ; add XSP(STAGE[0]), XSP(o), #bytes as u32
+            ; cmp X(STAGE[0]), X(SCRATCH2)
+            ; b.hi =>dl
+            ; ldr X(SCRATCH), [X(SCRATCH)]
+        );
+    }
+}
+
 impl IntEmitter for ArmEmitter {
+    fn load_mem(
+        &mut self,
+        dst: Tmp,
+        block: Tmp,
+        offset: Tmp,
+        bytes: u8,
+        s: Signedness,
+        fail: Label,
+    ) {
+        self.mem_entry(block, offset, bytes, fail);
+        let (d, o) = (reg(dst), reg(offset));
+        match (bytes, s) {
+            (1, Signedness::Unsigned) => arm!(self.ops ; ldrb W(d), [X(SCRATCH), X(o)]),
+            (2, Signedness::Unsigned) => arm!(self.ops ; ldrh W(d), [X(SCRATCH), X(o)]),
+            (4, Signedness::Unsigned) => arm!(self.ops ; ldr W(d), [X(SCRATCH), X(o)]),
+            (1, Signedness::Signed) => arm!(self.ops ; ldrsb X(d), [X(SCRATCH), X(o)]),
+            (2, Signedness::Signed) => arm!(self.ops ; ldrsh X(d), [X(SCRATCH), X(o)]),
+            (4, Signedness::Signed) => arm!(self.ops ; ldrsw X(d), [X(SCRATCH), X(o)]),
+            _ => arm!(self.ops ; ldr X(d), [X(SCRATCH), X(o)]),
+        }
+    }
+    fn store_mem(&mut self, block: Tmp, offset: Tmp, src: Tmp, bytes: u8, fail: Label) {
+        self.mem_entry(block, offset, bytes, fail);
+        let (v, o) = (reg(src), reg(offset));
+        match bytes {
+            1 => arm!(self.ops ; strb W(v), [X(SCRATCH), X(o)]),
+            2 => arm!(self.ops ; strh W(v), [X(SCRATCH), X(o)]),
+            4 => arm!(self.ops ; str W(v), [X(SCRATCH), X(o)]),
+            _ => arm!(self.ops ; str X(v), [X(SCRATCH), X(o)]),
+        }
+    }
+
     // ldr/str imm offset is unsigned, scaled by access size, so reaches 4095 * size, past that index via SCRATCH2
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth) {
         let off = slot.byte_offset() as u32;

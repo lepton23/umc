@@ -3,6 +3,15 @@ mod x86_64;
 
 use crate::vm::RegWidth;
 use crate::vm::compiler::{FrameLayout, FrameSlot};
+use crate::vm::memory::safe::SafeMemoryManager;
+
+// where the block table lives inside the manager MEM_BASE points at
+pub(crate) const TABLE_PTR_OFF: u32 = core::mem::offset_of!(SafeMemoryManager, table_ptr) as u32;
+pub(crate) const TABLE_LEN_OFF: u32 = core::mem::offset_of!(SafeMemoryManager, table_len) as u32;
+// emitters index the table with block << 4 and read len at +8
+const _: () = assert!(size_of::<crate::vm::memory::safe::BlockEntry>() == 16);
+// inline loads must agree with Serializable's from_le_bytes
+const _: () = assert!(cfg!(target_endian = "little"));
 
 #[cfg(target_arch = "aarch64")]
 pub type NativeEmitter = aarch64::ArmEmitter;
@@ -141,6 +150,20 @@ pub trait IntEmitter {
         s: Signedness,
         target: Label,
     );
+
+    /// dst = bytes at (block, offset) in guest memory, zero or sign extended to 64
+    /// jumps to fail on bad block, freed block or out of bounds, clobbers block
+    fn load_mem(
+        &mut self,
+        dst: Tmp,
+        block: Tmp,
+        offset: Tmp,
+        bytes: u8,
+        s: Signedness,
+        fail: Label,
+    );
+    /// low bytes of src to (block, offset), same checks as load_mem
+    fn store_mem(&mut self, block: Tmp, offset: Tmp, src: Tmp, bytes: u8, fail: Label);
 }
 
 pub trait FloatEmitter {

@@ -72,9 +72,15 @@ impl<'a, E: Emitter> Ctx<'a, E> {
 
     /// hand current instruction to the interpreter when lhs cond rhs holds at runtime
     fn bail_if(&mut self, cond: CmpCond, lhs: Tmp, rhs: Src, w: OpWidth, s: Signedness) {
-        let bail = self.e.new_label();
+        let bail = self.bail_label();
         self.e.branch_cmp(cond, lhs, rhs, w, s, bail);
+    }
+
+    /// label that hands current instruction to the interpreter when jumped to
+    fn bail_label(&mut self) -> Label {
+        let bail = self.e.new_label();
         self.bails.push((bail, self.pc));
+        bail
     }
 
     fn unsupported(&self, reason: &'static str) -> CompileError {

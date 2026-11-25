@@ -68,7 +68,94 @@ impl X86Emitter {
     }
 }
 
+impl X86Emitter {
+    /// SCRATCH64 = data ptr of block, jumps to fail unless offset + bytes <= block len
+    fn mem_entry(
+        &mut self,
+        block: Tmp,
+        offset: Tmp,
+        bytes: u8,
+        fail: Label,
+    ) -> Result<(), IcedError> {
+        let st = &mut self.labels[fail.0 as usize];
+        st.referenced = true;
+        let l = st.iced;
+        let (b, o, a) = (r64(block), r64(offset), &mut self.asm);
+        // NULL block is u64::MAX so it fails here too
+        a.cmp(b, qword_ptr(MEM_BASE + TABLE_LEN_OFF))?;
+        a.jae(l)?;
+        a.shl(b, 4)?;
+        a.add(b, qword_ptr(MEM_BASE + TABLE_PTR_OFF))?;
+        // offset < len first so offset + bytes can't wrap
+        a.cmp(o, qword_ptr(b + 8))?;
+        a.jae(l)?;
+        a.lea(STAGE[0], qword_ptr(o + bytes as i32))?;
+        a.cmp(STAGE[0], qword_ptr(b + 8))?;
+        a.ja(l)?;
+        a.mov(SCRATCH64, qword_ptr(b))
+    }
+
+    fn load_mem_inner(
+        &mut self,
+        dst: Tmp,
+        block: Tmp,
+        offset: Tmp,
+        bytes: u8,
+        s: Signedness,
+        fail: Label,
+    ) -> Result<(), IcedError> {
+        self.mem_entry(block, offset, bytes, fail)?;
+        let m = SCRATCH64 + r64(offset);
+        let a = &mut self.asm;
+        match (bytes, s) {
+            (1, Signedness::Unsigned) => a.movzx(r32(dst), byte_ptr(m)),
+            (2, Signedness::Unsigned) => a.movzx(r32(dst), word_ptr(m)),
+            (4, Signedness::Unsigned) => a.mov(r32(dst), dword_ptr(m)),
+            (1, Signedness::Signed) => a.movsx(r64(dst), byte_ptr(m)),
+            (2, Signedness::Signed) => a.movsx(r64(dst), word_ptr(m)),
+            (4, Signedness::Signed) => a.movsxd(r64(dst), dword_ptr(m)),
+            _ => a.mov(r64(dst), qword_ptr(m)),
+        }
+    }
+
+    fn store_mem_inner(
+        &mut self,
+        block: Tmp,
+        offset: Tmp,
+        src: Tmp,
+        bytes: u8,
+        fail: Label,
+    ) -> Result<(), IcedError> {
+        self.mem_entry(block, offset, bytes, fail)?;
+        let m = SCRATCH64 + r64(offset);
+        let a = &mut self.asm;
+        match bytes {
+            1 => a.mov(byte_ptr(m), reg8(src)),
+            2 => a.mov(word_ptr(m), reg16(src)),
+            4 => a.mov(dword_ptr(m), r32(src)),
+            _ => a.mov(qword_ptr(m), r64(src)),
+        }
+    }
+}
+
 impl IntEmitter for X86Emitter {
+    fn load_mem(
+        &mut self,
+        dst: Tmp,
+        block: Tmp,
+        offset: Tmp,
+        bytes: u8,
+        s: Signedness,
+        fail: Label,
+    ) {
+        let r = self.load_mem_inner(dst, block, offset, bytes, s, fail);
+        record(&mut self.error, r);
+    }
+    fn store_mem(&mut self, block: Tmp, offset: Tmp, src: Tmp, bytes: u8, fail: Label) {
+        let r = self.store_mem_inner(block, offset, src, bytes, fail);
+        record(&mut self.error, r);
+    }
+
     fn load_slot(&mut self, dst: Tmp, slot: FrameSlot, w: OpWidth) {
         let m = FRAME_BASE + slot.byte_offset();
         let r = match w {

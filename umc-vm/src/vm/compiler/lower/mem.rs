@@ -57,34 +57,10 @@ fn call_checked<E: Emitter>(cx: &mut Ctx<E>, f: usize, args: &[Arg]) {
     );
 }
 
-/// host fn for a 8 / 16 / 32 / 64 bit value register
-fn by_width4<E: Emitter>(
-    cx: &Ctx<E>,
-    width: RegWidth,
-    f8_: usize,
-    f16_: usize,
-    f32_: usize,
-    f64_: usize,
-) -> Result<usize, CompileError> {
-    match width {
-        8 => Ok(f8_),
-        16 => Ok(f16_),
-        32 => Ok(f32_),
-        64 => Ok(f64_),
-        _ => Err(cx.unsupported("load width")),
-    }
-}
-
-/// host fn for a 32 / 64 bit value register
-fn by_width2<E: Emitter>(
-    cx: &Ctx<E>,
-    width: RegWidth,
-    f32_: usize,
-    f64_: usize,
-) -> Result<usize, CompileError> {
-    match width {
-        32 => Ok(f32_),
-        64 => Ok(f64_),
+/// access size of a value register the inline path handles
+fn prim_bytes<E: Emitter>(cx: &Ctx<E>, width: RegWidth, float: bool) -> Result<u8, CompileError> {
+    match (width, float) {
+        (8 | 16, false) | (32 | 64, _) => Ok((width / 8) as u8),
         _ => Err(cx.unsupported("load width")),
     }
 }
@@ -208,57 +184,43 @@ pub(super) fn load<E: Emitter>(
     src: &RegOrConstant<MemRegT>,
 ) -> Result<Flow, CompileError> {
     let a = addr_slot(cx, src);
-    let (f, d) = match dst {
+    let (bytes, sign, d) = match dst {
         AnySingleReg::Unsigned(r) => (
-            by_width4(
-                cx,
-                r.width,
-                jit_load::<u8> as *const () as usize,
-                jit_load::<u16> as *const () as usize,
-                jit_load::<u32> as *const () as usize,
-                jit_load::<u64> as *const () as usize,
-            )?,
+            prim_bytes(cx, r.width, false)?,
+            Signedness::Unsigned,
             cx.layout.write_slot(JitReg::key(r)),
         ),
         AnySingleReg::Signed(r) => (
-            by_width4(
-                cx,
-                r.width,
-                jit_load::<i8> as *const () as usize,
-                jit_load::<i16> as *const () as usize,
-                jit_load::<i32> as *const () as usize,
-                jit_load::<i64> as *const () as usize,
-            )?,
+            prim_bytes(cx, r.width, false)?,
+            Signedness::Signed,
             cx.layout.write_slot(JitReg::key(r)),
         ),
+        // raw bits, f32 zero extended like SlotPrim::to_slot
         AnySingleReg::Float(r) => (
-            by_width2(
+            prim_bytes(cx, r.width, true)?,
+            Signedness::Unsigned,
+            cx.layout.write_slot(JitReg::key(r)),
+        ),
+        // rare, stay on host calls
+        AnySingleReg::Instr(r) => {
+            let d = cx.layout.write_slot(JitReg::key(r));
+            return host_access(
                 cx,
-                r.width,
-                jit_load::<f32> as *const () as usize,
-                jit_load::<f64> as *const () as usize,
-            )?,
-            cx.layout.write_slot(JitReg::key(r)),
-        ),
-        AnySingleReg::Instr(r) => (
-            jit_load::<InstructionAddress> as *const () as usize,
-            cx.layout.write_slot(JitReg::key(r)),
-        ),
-        AnySingleReg::Mem(r) => (
-            host_mem::jit_load_mem as *const () as usize,
-            cx.layout.mem_write_slot(r.index),
-        ),
+                jit_load::<InstructionAddress> as *const () as usize,
+                a,
+                d,
+            );
+        }
+        AnySingleReg::Mem(r) => {
+            let d = cx.layout.mem_write_slot(r.index);
+            return host_access(cx, host_mem::jit_load_mem as *const () as usize, a, d);
+        }
     };
-    call_checked(
-        cx,
-        f,
-        &[
-            Arg::Mem,
-            Arg::Frame,
-            Arg::Imm(a.0 as u64),
-            Arg::Imm(d.0 as u64),
-        ],
-    );
+    cx.e.load_slot(Tmp::T0, a, OpWidth::W64);
+    cx.e.load_slot(Tmp::T1, next(a), OpWidth::W64);
+    let fail = cx.bail_label();
+    cx.e.load_mem(Tmp::T0, Tmp::T0, Tmp::T1, bytes, sign, fail);
+    cx.e.store_slot(d, Tmp::T0, OpWidth::W64);
     Ok(Flow::Next)
 }
 
@@ -269,47 +231,48 @@ pub(super) fn store<E: Emitter>(
     src: &AnySingleReg,
 ) -> Result<Flow, CompileError> {
     let a = addr_slot(cx, dst);
-    let (f, s) = match src {
+    let (bytes, s) = match src {
         AnySingleReg::Unsigned(r) => (
-            by_width4(
-                cx,
-                r.width,
-                jit_store::<u8> as *const () as usize,
-                jit_store::<u16> as *const () as usize,
-                jit_store::<u32> as *const () as usize,
-                jit_store::<u64> as *const () as usize,
-            )?,
+            prim_bytes(cx, r.width, false)?,
             cx.layout.read_slot(JitReg::key(r)),
         ),
         AnySingleReg::Signed(r) => (
-            by_width4(
-                cx,
-                r.width,
-                jit_store::<i8> as *const () as usize,
-                jit_store::<i16> as *const () as usize,
-                jit_store::<i32> as *const () as usize,
-                jit_store::<i64> as *const () as usize,
-            )?,
+            prim_bytes(cx, r.width, false)?,
             cx.layout.read_slot(JitReg::key(r)),
         ),
         AnySingleReg::Float(r) => (
-            by_width2(
+            prim_bytes(cx, r.width, true)?,
+            cx.layout.read_slot(JitReg::key(r)),
+        ),
+        AnySingleReg::Instr(r) => {
+            let s = cx.layout.read_slot(JitReg::key(r));
+            return host_access(
                 cx,
-                r.width,
-                jit_store::<f32> as *const () as usize,
-                jit_store::<f64> as *const () as usize,
-            )?,
-            cx.layout.read_slot(JitReg::key(r)),
-        ),
-        AnySingleReg::Instr(r) => (
-            jit_store::<InstructionAddress> as *const () as usize,
-            cx.layout.read_slot(JitReg::key(r)),
-        ),
-        AnySingleReg::Mem(r) => (
-            host_mem::jit_store_mem as *const () as usize,
-            cx.layout.mem_read_slot(MemKey::Reg(r.index)),
-        ),
+                jit_store::<InstructionAddress> as *const () as usize,
+                a,
+                s,
+            );
+        }
+        AnySingleReg::Mem(r) => {
+            let s = cx.layout.mem_read_slot(MemKey::Reg(r.index));
+            return host_access(cx, host_mem::jit_store_mem as *const () as usize, a, s);
+        }
     };
+    cx.e.load_slot(Tmp::T0, a, OpWidth::W64);
+    cx.e.load_slot(Tmp::T1, next(a), OpWidth::W64);
+    cx.e.load_slot(Tmp::T2, s, OpWidth::W64);
+    let fail = cx.bail_label();
+    cx.e.store_mem(Tmp::T0, Tmp::T1, Tmp::T2, bytes, fail);
+    Ok(Flow::Next)
+}
+
+/// load / store through host fn f(mem, frame, addr slot, value slot)
+fn host_access<E: Emitter>(
+    cx: &mut Ctx<E>,
+    f: usize,
+    a: FrameSlot,
+    v: FrameSlot,
+) -> Result<Flow, CompileError> {
     call_checked(
         cx,
         f,
@@ -317,7 +280,7 @@ pub(super) fn store<E: Emitter>(
             Arg::Mem,
             Arg::Frame,
             Arg::Imm(a.0 as u64),
-            Arg::Imm(s.0 as u64),
+            Arg::Imm(v.0 as u64),
         ],
     );
     Ok(Flow::Next)

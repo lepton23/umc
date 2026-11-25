@@ -45,6 +45,7 @@ pub(super) unsafe fn flush_icache(_ptr: NonNull<c_void>, _len: usize) -> Result<
 }
 #[cfg(target_arch = "aarch64")]
 pub(super) unsafe fn flush_icache(ptr: NonNull<c_void>, len: usize) -> Result<(), ExecMemError> {
+    use core::ffi::c_char;
     unsafe extern "C" {
         fn __clear_cache(start: *mut c_char, end: *mut c_char);
     }

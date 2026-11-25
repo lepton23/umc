@@ -8,11 +8,45 @@ use crate::vm::types::UMCOffset;
 #[derive(Debug)]
 pub struct SafeMemoryManager {
     blocks: Vec<Option<SimpleMemoryBlock>>,
+    // flat copy of blocks for compiled code, freed entry has len 0
+    table: Vec<BlockEntry>,
+    // table.as_ptr() / len() at fixed offsets, compiled code reads them through the manager pointer
+    pub(crate) table_ptr: *const BlockEntry,
+    pub(crate) table_len: usize,
+}
+
+/// one block as compiled code sees it
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BlockEntry {
+    pub ptr: *mut u8,
+    pub len: usize,
 }
 
 impl SafeMemoryManager {
     pub fn new() -> Self {
-        Self { blocks: vec![] }
+        Self {
+            blocks: vec![],
+            table: vec![],
+            table_ptr: core::ptr::null(),
+            table_len: 0,
+        }
+    }
+
+    fn push_block(&mut self, mut block: SimpleMemoryBlock) -> SafeAddress {
+        // Box contents never move, so ptr stays valid until free
+        self.table.push(BlockEntry {
+            ptr: block.0.as_mut_ptr(),
+            len: block.0.len(),
+        });
+        self.blocks.push(Some(block));
+        self.sync_table();
+        SafeAddress::from_id(self.blocks.len() - 1)
+    }
+
+    fn sync_table(&mut self) {
+        self.table_ptr = self.table.as_ptr();
+        self.table_len = self.table.len();
     }
 
     fn get_block(&self, address: &SafeAddress) -> Option<&SimpleMemoryBlock> {
@@ -102,22 +136,19 @@ impl MemoryManager for SafeMemoryManager {
 
     fn allocate(&mut self, bytes: usize) -> Result<Self::Address, AllocateError> {
         // Append a new block
-        let block = SimpleMemoryBlock::allocate(bytes);
-        self.blocks.push(Some(block));
-        let id = self.blocks.len() - 1;
-        Ok(SafeAddress::from_id(id))
+        Ok(self.push_block(SimpleMemoryBlock::allocate(bytes)))
     }
 
     fn allocate_initalised(&mut self, data: Vec<u8>) -> Result<Self::Address, AllocateError> {
-        let block = SimpleMemoryBlock::allocate_initalised(data);
-        self.blocks.push(Some(block));
-        let id = self.blocks.len() - 1;
-        Ok(SafeAddress::from_id(id))
+        Ok(self.push_block(SimpleMemoryBlock::allocate_initalised(data)))
     }
 
     fn free(&mut self, address: &Self::Address) {
         // Deallocate by removing the allocated block
         self.blocks.get_mut(address.block_id).map(|b| *b = None);
+        if let Some(e) = self.table.get_mut(address.block_id) {
+            e.len = 0;
+        }
     }
 
     fn load_prim<V: Serializable>(

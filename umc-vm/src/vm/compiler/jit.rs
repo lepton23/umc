@@ -138,7 +138,9 @@ mod tests {
     use crate::vm::widths::uint::UIntWidth;
     use umc_compiler::error_display::assemble_prog;
     use umc_model::instructions::{AddParams, AnyConsistentNumOp, ConsistentOp};
-    use umc_model::reg_model::{FloatRegT, InstrRegT, Reg, RegOrConstant, UnsignedRegT};
+    use umc_model::reg_model::{
+        FloatRegT, InstrRegT, Reg, RegOrConstant, SignedRegT, UnsignedRegT,
+    };
     use umc_model::{RegIndex, RegWidth};
 
     fn unsigned(index: RegIndex, width: RegWidth) -> Reg<UnsignedRegT> {
@@ -179,6 +181,14 @@ mod tests {
         program: &[Instruction],
         setup: impl FnOnce(&mut RegState<SafeAddress>),
     ) -> (BlockExit, RegState<SafeAddress>) {
+        let (exit, state, _) = run_on_mem(program, setup);
+        (exit, state)
+    }
+
+    fn run_on_mem(
+        program: &[Instruction],
+        setup: impl FnOnce(&mut RegState<SafeAddress>),
+    ) -> (BlockExit, RegState<SafeAddress>, SafeMemoryManager) {
         let mut jit = NativeJit::new();
         let mut layout = FrameLayout::new();
         let request = jit.compile_block(program, 0, &mut layout).unwrap();
@@ -188,7 +198,7 @@ mod tests {
         let exit = jit
             .execute_block(&request.block, &layout, &mut state, &mut memory, &[], 0)
             .unwrap();
-        (exit, state)
+        (exit, state, memory)
     }
 
     fn compile_err(src: &str) -> CompileError {
@@ -440,6 +450,102 @@ mod tests {
                 matches!(e, CompileError::Unsupported { pc: 0, .. }),
                 "{e:?}"
             );
+        }
+    }
+
+    use crate::vm::memory::MemoryManager;
+
+    fn geti(state: &RegState<SafeAddress>, index: RegIndex, width: RegWidth) -> i64 {
+        crate::vm::helper::read_int::<i64, _>(
+            &RegOrConstant::Reg(Reg::<SignedRegT> { index, width }),
+            state,
+        )
+    }
+
+    #[test]
+    fn inline_load_store_extends_by_width() {
+        const PROG: &str = "
+            alloc m:0, #16
+            store m:0, u64:0
+            load u8:1, m:0
+            load i8:2, m:0
+            load u16:3, m:0
+            load i16:4, m:0
+            load u32:5, m:0
+            load i32:6, m:0
+            load u64:7, m:0
+            add m:1, m:0, #8
+            store m:1, f32:0
+            load f32:1, m:1
+            store m:1, u8:9
+        ";
+        let prog = assemble_prog(PROG).unwrap().instructions;
+        let (exit, state, mem) = run_on_mem(&prog, |st| {
+            UIntWidth::store_u64(u64_reg(0), st, 0x8081_8283_8485_8687);
+            UIntWidth::store_u64(unsigned(9, 8), st, 0xAB);
+            st.store_prim(f32_reg(0), -2.5f32);
+        });
+        assert_eq!(exit, BlockExit::Goto(prog.len()));
+        assert_eq!(read(&state, unsigned(1, 8)), 0x87);
+        assert_eq!(geti(&state, 2, 8), 0x87u8 as i8 as i64);
+        assert_eq!(read(&state, unsigned(3, 16)), 0x8687);
+        assert_eq!(geti(&state, 4, 16), 0x8687u16 as i16 as i64);
+        assert_eq!(read(&state, unsigned(5, 32)), 0x8485_8687);
+        assert_eq!(geti(&state, 6, 32), 0x8485_8687u32 as i32 as i64);
+        assert_eq!(get(&state, 7), 0x8081_8283_8485_8687);
+        assert_eq!(readf::<f32>(&state, f32_reg(1)), -2.5);
+        // native stores must match the interpreter's little endian Serializable
+        let base = SafeAddress::from_id(0);
+        assert_eq!(mem.load_prim::<u64>(&base).unwrap(), 0x8081_8283_8485_8687);
+        let hi = SafeAddress::from_parts(0, 8);
+        assert_eq!(
+            mem.load_prim::<u32>(&hi).unwrap(),
+            (-2.5f32).to_bits() & !0xFF | 0xAB
+        );
+    }
+
+    #[test]
+    fn inline_access_bails_on_bad_address() {
+        let cases = [
+            // reads past end
+            (
+                "alloc m:0, #4
+load u64:1, m:0
+",
+                1,
+            ),
+            (
+                "alloc m:0, #4
+add m:0, m:0, #1
+load u32:1, m:0
+",
+                2,
+            ),
+            (
+                "alloc m:0, #4
+add m:0, m:0, #4
+store m:0, u8:1
+",
+                2,
+            ),
+            // freed block
+            (
+                "alloc m:0, #8
+free m:0
+load u8:1, m:0
+",
+                2,
+            ),
+            // unset register is the NULL block
+            (
+                "store m:3, u64:1
+",
+                0,
+            ),
+        ];
+        for (src, pc) in cases {
+            let (exit, _) = run_block(src, &[]);
+            assert_eq!(exit, BlockExit::Interpret(pc), "{src}");
         }
     }
 }
