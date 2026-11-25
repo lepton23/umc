@@ -228,7 +228,7 @@ fn lower_instr<E: Emitter>(cx: &mut Ctx<E>, instr: &Instruction) -> Result<Flow,
         Instruction::Dbg(AnyReg::Single(AnySingleReg::Instr(r))) => debug::dbg_instr(cx, r),
         Instruction::Dbg(AnyReg::Single(AnySingleReg::Mem(r))) => debug::dbg_mem(cx, r),
         _ => {
-            println!("{}", instr);
+            // println!("{}", instr);
             not_lowered(cx)
         }
     }
@@ -264,6 +264,6 @@ fn num_op<E: Emitter>(
 }
 
 fn not_lowered<E: Emitter>(cx: &Ctx<E>) -> Result<Flow, CompileError> {
-    println!("Unsupported instruction for lowering as of now");
+    // println!("Unsupported instruction for lowering as of now");
     Err(cx.unsupported("instruction not lowered"))
 }

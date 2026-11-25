@@ -1,17 +1,23 @@
-use rustc_hash::{FxHashMap, FxHashSet};
-
 use crate::vm::{
     compiler::{BlockExit, CompiledBlock, Compiler, jit::*},
     memory::safe::{SafeAddress, SafeMemoryManager},
     state::RegState,
 };
+
 use umc_model::instructions::Instruction;
+
+// per-pc jit state, only consulted at block leaders
+#[derive(Clone, Copy)]
+pub enum PcState {
+    Cold(u32),     // times reached as a leader
+    Compiled(u32), // index into JitEngine::blocks
+    Blacklisted,
+}
 
 pub struct JitEngine {
     pub jit: NativeJit,
-    pub counters: Vec<u32>,
-    pub blocks: FxHashMap<usize, CompiledBlock>,
-    pub blacklist: FxHashSet<usize>,
+    pub states: Vec<PcState>,
+    pub blocks: Vec<CompiledBlock>,
     pub threshold: u32,
     pub verbose: bool,
 }
@@ -27,36 +33,37 @@ impl JitEngine {
         memory: &mut SafeMemoryManager,
         constants: &[SafeAddress],
     ) -> Option<BlockExit> {
-        // Blacklisted blocks should be interpreted
-        if self.blacklist.contains(&pc) {
-            return None;
-        }
-        // COLD
-        if self.counters[pc] < self.threshold {
-            self.counters[pc] += 1;
-            return None;
-        } else if !self.blocks.contains_key(&pc) {
+        let idx = match self.states[pc] {
+            PcState::Blacklisted => return None,
+            // COLD
+            PcState::Cold(n) if n < self.threshold => {
+                self.states[pc] = PcState::Cold(n + 1);
+                return None;
+            }
             // HOT - NOT COMPILED
-            println!("Threshold reached for block at pc: {pc}, compiling block...");
-            match self.jit.compile_block(program, pc) {
-                Ok(request) => self.blocks.insert(pc, request.block),
+            PcState::Cold(_) => match self.jit.compile_block(program, pc) {
+                Ok(request) => {
+                    let i = self.blocks.len() as u32;
+                    self.blocks.push(request.block);
+                    self.states[pc] = PcState::Compiled(i);
+                    i
+                }
                 Err(_) => {
-                    println!("Failed compilation: blacklisting block...");
-                    self.blacklist.insert(pc);
+                    self.states[pc] = PcState::Blacklisted;
                     return None;
                 }
-            };
-        }
+            },
+            PcState::Compiled(i) => i,
+        };
         // HOT & COMPILED
         match self
             .jit
-            .execute_block(self.blocks.get(&pc)?, state, memory, constants, pc)
+            .execute_block(&self.blocks[idx as usize], state, memory, constants, pc)
         {
-            Ok(exit) => return Some(exit),
+            Ok(exit) => Some(exit),
             Err(_) => {
-                self.blacklist.insert(pc);
-                println!("Failed execution of compiled block, blacklisting...");
-                return None;
+                self.states[pc] = PcState::Blacklisted;
+                None
             }
         }
     }

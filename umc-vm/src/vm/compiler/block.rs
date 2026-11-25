@@ -11,7 +11,7 @@ pub(crate) fn scan(program: &[Instruction], entry_pc: usize) -> Range<usize> {
     return entry_pc..program.len();
 }
 
-fn is_control_flow(instr: &Instruction) -> bool {
+pub(crate) fn is_control_flow(instr: &Instruction) -> bool {
     match instr {
         Instruction::Bz(..)
         | Instruction::Bnz(..)

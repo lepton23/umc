@@ -1,7 +1,7 @@
 //! Compiler for Universal Machine Code to a specific machine code
 //! This is used in Just-in-Time compilation
 
-mod block;
+pub(crate) mod block;
 mod bridge;
 mod emit;
 pub mod engine;
@@ -61,6 +61,7 @@ pub struct CompiledBlock {
     entry_pc: usize,
     covered: Range<usize>,
     layout: FrameLayout,
+    dirty: Box<[u16]>,  // slot indices commit writes back; fixed at compile time
     exits: Vec<ExitTo>, // return val -> next pc
     page: ExecPage,     // owns W^X pages
 }

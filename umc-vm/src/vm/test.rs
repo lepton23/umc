@@ -337,6 +337,26 @@ fn hot_div_mod_loop() {
     assert_eq!(vm.inspect_uint::<u64>(2, u64::BITS), mod_sum);
 }
 
+#[cfg(feature = "jit")]
+#[test]
+fn jit_only_compiles_block_leaders() {
+    const PROG: &str = "
+        mov u64:0, #50
+        mov u64:1, #0
+    .LOOP:
+        add u64:1, u64:1, u64:0
+        sub u64:0, u64:0, #1
+        bnz .LOOP, u64:0
+    ";
+    let vm = compile_and_run(PROG);
+    assert_eq!(vm.inspect_uint::<u64>(1, u64::BITS), (1..=50u64).sum());
+    let compiled: Vec<usize> = (0..vm.jit.states.len())
+        .filter(|&pc| matches!(vm.jit.states[pc], compiler::engine::PcState::Compiled(_)))
+        .collect();
+    // only the loop header, never the mid-block pcs 3 and 4
+    assert_eq!(compiled, vec![2]);
+}
+
 #[test]
 #[should_panic(expected = "divide by zero")]
 fn hot_div_by_zero_panics_like_interpreter() {

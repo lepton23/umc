@@ -17,7 +17,9 @@ use std::fmt::Display;
 #[cfg(feature = "jit")]
 use crate::vm::compiler::BlockExit;
 #[cfg(feature = "jit")]
-use crate::vm::compiler::engine::JitEngine;
+use crate::vm::compiler::block::is_control_flow;
+#[cfg(feature = "jit")]
+use crate::vm::compiler::engine::{JitEngine, PcState};
 #[cfg(feature = "jit")]
 use crate::vm::compiler::jit::NativeJit;
 use crate::vm::environment::AnyEnvironment;
@@ -113,9 +115,8 @@ impl VirtualMachine {
             #[cfg(feature = "jit")]
             jit: JitEngine {
                 jit: NativeJit::new(),
-                counters: vec![0; program_len],
-                blocks: Default::default(),
-                blacklist: Default::default(),
+                states: vec![PcState::Cold(0); program_len],
+                blocks: Vec::new(),
                 threshold: options.jit_threshold,
                 verbose: options.verbose,
             },
@@ -125,16 +126,31 @@ impl VirtualMachine {
     /// Begin execution of the program until it completes
     pub fn execute(&mut self) {
         let program_len = self.program.len();
+        // only block leaders consult the jit: pc 0, jump targets, fallthrough after a branch,
+        // and the pc after an Interpret bail. Tracked at runtime since jump targets can be registers
+        #[cfg(feature = "jit")]
+        let mut at_leader = true;
         while self.pc < program_len {
             #[cfg(feature = "jit")]
-            match self.try_run_jit() {
-                Some(BlockExit::Goto(next)) => {
-                    self.pc = next;
-                    continue;
+            {
+                let mut bailed = false;
+                if at_leader {
+                    match self.try_run_jit() {
+                        // jump target is a leader, at_leader stays true
+                        Some(BlockExit::Goto(next)) => {
+                            self.pc = next;
+                            continue;
+                        }
+                        // fall through to interpret this one instruction without consulting jit
+                        Some(BlockExit::Interpret(at)) => {
+                            self.pc = at;
+                            bailed = true;
+                        }
+                        None => {}
+                    }
                 }
-                // fall through to interpret this one instruction without consulting jit
-                Some(BlockExit::Interpret(at)) => self.pc = at,
-                None => {}
+                // read before execute_step moves pc
+                at_leader = bailed || is_control_flow(&self.program[self.pc]);
             }
             self.execute_step();
         }

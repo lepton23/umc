@@ -11,7 +11,7 @@ use rustc_hash::FxBuildHasher;
 use umc_model::reg_model::{
     FloatRegT, InstrRegT, MemRegT, Reg, RegTypeT, SignedRegT, UnsignedRegT,
 };
-use umc_model::{RegIndex, RegWidth};
+use umc_model::RegIndex;
 
 pub trait StoreFor<V, RT: RegTypeT> {
     fn read(&self, k: Reg<RT>) -> Option<&V>;
@@ -49,16 +49,16 @@ pub struct RegState<M: MemoryAddress> {
     u8s: FastPrimStore<u8>,
     u16s: FastPrimStore<u16>,
     u32s: FastPrimStore<u32>,
-    u64s: HashMapStore<RegIndex, u64>,
+    u64s: FastPrimStore<u64>,
     uas: HashMapStore<Reg<UnsignedRegT>, ArbitraryUnsignedInt>,
-    i8s: HashMapStore<RegIndex, i8>,
-    i16s: HashMapStore<RegIndex, i16>,
-    i32s: HashMapStore<RegIndex, i32>,
-    i64s: HashMapStore<RegIndex, i64>,
+    i8s: FastPrimStore<i8>,
+    i16s: FastPrimStore<i16>,
+    i32s: FastPrimStore<i32>,
+    i64s: FastPrimStore<i64>,
     ias: HashMapStore<Reg<SignedRegT>, ArbitraryInt>,
-    f32s: HashMapStore<RegIndex, f32>,
-    f64s: HashMapStore<RegIndex, f64>,
-    addresses: HashMapStore<Reg<InstrRegT>, InstructionAddress>,
+    f32s: FastPrimStore<f32>,
+    f64s: FastPrimStore<f64>,
+    addresses: FastOptStore<InstructionAddress>,
     mem_addresses: FastOptStore<M>,
 }
 
@@ -69,16 +69,16 @@ impl<M: MemoryAddress> RegState<M> {
             u8s: FastPrimStore::new_default(),
             u16s: FastPrimStore::new_default(),
             u32s: FastPrimStore::new_default(),
-            u64s: HashMapStore::new(),
+            u64s: FastPrimStore::new_default(),
             uas: HashMapStore::new(),
-            i8s: HashMapStore::new(),
-            i16s: HashMapStore::new(),
-            i32s: HashMapStore::new(),
-            i64s: HashMapStore::new(),
+            i8s: FastPrimStore::new_default(),
+            i16s: FastPrimStore::new_default(),
+            i32s: FastPrimStore::new_default(),
+            i64s: FastPrimStore::new_default(),
             ias: HashMapStore::new(),
-            f32s: HashMapStore::new(),
-            f64s: HashMapStore::new(),
-            addresses: HashMapStore::new(),
+            f32s: FastPrimStore::new_default(),
+            f64s: FastPrimStore::new_default(),
+            addresses: FastOptStore::new_none(),
             mem_addresses: FastOptStore::new_none(),
         }
     }
@@ -90,12 +90,6 @@ where
 {
     fn get_store(&self) -> &HashMapStore<Reg<RT>, V>;
     fn get_store_mut(&mut self) -> &mut HashMapStore<Reg<RT>, V>;
-}
-
-trait PrimNumStoreFor<RT: RegTypeT, P: Copy> {
-    const BITS: u32;
-    fn get_store(&self) -> &HashMapStore<RegIndex, P>;
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, P>;
 }
 
 impl<RT: RegTypeT, V, M: MemoryAddress> StoreFor<V, RT> for RegState<M>
@@ -127,32 +121,6 @@ where
         V: Copy,
     {
         DStoreFor::get_store_mut(self).store_multi_copy(k, vals);
-    }
-}
-
-impl<M: MemoryAddress, P: Copy, RT: RegTypeT<WIDTH = RegWidth>> StorePrim<P, RT> for RegState<M>
-where
-    Self: PrimNumStoreFor<RT, P>,
-    P: Copy,
-{
-    fn read_prim(&self, k: Reg<RT>) -> Option<P> {
-        debug_assert!(k.width <= Self::BITS);
-        PrimNumStoreFor::get_store(self).read(k.index).copied()
-    }
-
-    fn store_prim(&mut self, k: Reg<RT>, val: P) {
-        debug_assert!(k.width <= Self::BITS);
-        PrimNumStoreFor::get_store_mut(self).store(k.index, val);
-    }
-
-    fn read_multi_prim(&self, k: Reg<RT>, count: usize) -> Option<&VecValue<P>> {
-        debug_assert!(k.width <= Self::BITS);
-        PrimNumStoreFor::get_store(self).read_multi(k.index, count)
-    }
-
-    fn store_multi_copy_prim(&mut self, k: Reg<RT>, vals: &[P]) {
-        debug_assert!(k.width <= Self::BITS);
-        PrimNumStoreFor::get_store_mut(self).store_multi_copy(k.index, vals);
     }
 }
 
@@ -355,117 +323,63 @@ impl<M: MemoryAddress> StorePrim<bool, UnsignedRegT> for RegState<M> {
     }
 }
 
-macro_rules! impl_fast_uint_store {
-    ($t:ty, $field:ident) => {
-        impl<M: MemoryAddress> StorePrim<$t, UnsignedRegT> for RegState<M> {
-            fn read_prim(&self, k: Reg<UnsignedRegT>) -> Option<$t> {
-                debug_assert_eq!(k.width, <$t>::BITS);
+// $op: u8..u32 require exact width, others accept narrower widths stored in the wider type
+macro_rules! impl_fast_prim_store {
+    ($t:ty, $field:ident, $rt:ty, $bits:expr, $op:tt) => {
+        impl<M: MemoryAddress> StorePrim<$t, $rt> for RegState<M> {
+            fn read_prim(&self, k: Reg<$rt>) -> Option<$t> {
+                debug_assert!(k.width $op $bits);
                 self.$field.read_prim(k.index)
             }
 
-            fn store_prim(&mut self, k: Reg<UnsignedRegT>, val: $t) {
-                debug_assert_eq!(k.width, <$t>::BITS);
+            fn store_prim(&mut self, k: Reg<$rt>, val: $t) {
+                debug_assert!(k.width $op $bits);
                 self.$field.store_prim(k.index, val);
             }
 
-            fn read_multi_prim(&self, k: Reg<UnsignedRegT>, count: usize) -> Option<&VecValue<$t>> {
-                debug_assert_eq!(k.width, <$t>::BITS);
+            fn read_multi_prim(&self, k: Reg<$rt>, count: usize) -> Option<&VecValue<$t>> {
+                debug_assert!(k.width $op $bits);
                 self.$field.fallback.read_multi(k.index, count)
             }
 
-            fn store_multi_copy_prim(&mut self, k: Reg<UnsignedRegT>, vals: &[$t]) {
-                debug_assert_eq!(k.width, <$t>::BITS);
+            fn store_multi_copy_prim(&mut self, k: Reg<$rt>, vals: &[$t]) {
+                debug_assert!(k.width $op $bits);
                 self.$field.fallback.store_multi_copy(k.index, vals);
             }
         }
     };
 }
 
-impl_fast_uint_store!(u8, u8s);
-impl_fast_uint_store!(u16, u16s);
-impl_fast_uint_store!(u32, u32s);
+impl_fast_prim_store!(u8, u8s, UnsignedRegT, u8::BITS, ==);
+impl_fast_prim_store!(u16, u16s, UnsignedRegT, u16::BITS, ==);
+impl_fast_prim_store!(u32, u32s, UnsignedRegT, u32::BITS, ==);
+impl_fast_prim_store!(u64, u64s, UnsignedRegT, u64::BITS, <=);
+impl_fast_prim_store!(i8, i8s, SignedRegT, i8::BITS, <=);
+impl_fast_prim_store!(i16, i16s, SignedRegT, i16::BITS, <=);
+impl_fast_prim_store!(i32, i32s, SignedRegT, i32::BITS, <=);
+impl_fast_prim_store!(i64, i64s, SignedRegT, i64::BITS, <=);
+impl_fast_prim_store!(f32, f32s, FloatRegT, 32, <=);
+impl_fast_prim_store!(f64, f64s, FloatRegT, 64, <=);
 
-impl<M: MemoryAddress> PrimNumStoreFor<UnsignedRegT, u64> for RegState<M> {
-    const BITS: u32 = u64::BITS;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, u64> {
-        &self.u64s
+impl<M: MemoryAddress> StoreFor<InstructionAddress, InstrRegT> for RegState<M> {
+    fn read(&self, k: Reg<InstrRegT>) -> Option<&InstructionAddress> {
+        self.addresses.read_fast(k.index)
     }
 
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, u64> {
-        &mut self.u64s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<SignedRegT, i8> for RegState<M> {
-    const BITS: u32 = i8::BITS;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, i8> {
-        &self.i8s
+    fn store(&mut self, k: Reg<InstrRegT>, val: InstructionAddress) {
+        self.addresses.store_fast(k.index, val)
     }
 
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, i8> {
-        &mut self.i8s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<SignedRegT, i16> for RegState<M> {
-    const BITS: u32 = i16::BITS;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, i16> {
-        &self.i16s
+    fn read_multi(&self, k: Reg<InstrRegT>, count: usize) -> Option<&VecValue<InstructionAddress>> {
+        self.addresses.fallback.read_multi(k.index, count)
     }
 
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, i16> {
-        &mut self.i16s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<SignedRegT, i32> for RegState<M> {
-    const BITS: u32 = i32::BITS;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, i32> {
-        &self.i32s
+    fn store_multi_copy(&mut self, k: Reg<InstrRegT>, vals: &[InstructionAddress]) {
+        self.addresses.fallback.store_multi_copy(k.index, vals);
     }
 
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, i32> {
-        &mut self.i32s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<SignedRegT, i64> for RegState<M> {
-    const BITS: u32 = i64::BITS;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, i64> {
-        &self.i64s
-    }
-
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, i64> {
-        &mut self.i64s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<FloatRegT, f32> for RegState<M> {
-    const BITS: u32 = 32;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, f32> {
-        &self.f32s
-    }
-
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, f32> {
-        &mut self.f32s
-    }
-}
-
-impl<M: MemoryAddress> PrimNumStoreFor<FloatRegT, f64> for RegState<M> {
-    const BITS: u32 = 64;
-
-    fn get_store(&self) -> &HashMapStore<RegIndex, f64> {
-        &self.f64s
-    }
-
-    fn get_store_mut(&mut self) -> &mut HashMapStore<RegIndex, f64> {
-        &mut self.f64s
+    fn store_multi_clone(&mut self, k: Reg<InstrRegT>, vals: &[InstructionAddress]) {
+        self.addresses.fallback.store_multi_clone(k.index, vals);
     }
 }
 
@@ -489,12 +403,3 @@ impl<M: MemoryAddress> DStoreFor<SignedRegT, ArbitraryInt> for RegState<M> {
     }
 }
 
-impl<M: MemoryAddress> DStoreFor<InstrRegT, InstructionAddress> for RegState<M> {
-    fn get_store(&self) -> &HashMapStore<Reg<InstrRegT>, InstructionAddress> {
-        &self.addresses
-    }
-
-    fn get_store_mut(&mut self) -> &mut HashMapStore<Reg<InstrRegT>, InstructionAddress> {
-        &mut self.addresses
-    }
-}

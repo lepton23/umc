@@ -76,8 +76,9 @@ impl FrameBuffer {
     }
 
     /// commit results of compiled block back into VM registers
-    pub fn commit(&self, layout: &FrameLayout, state: &mut RegState<SafeAddress>) {
-        for i in 0..self.slots.len() {
+    pub fn commit(&self, layout: &FrameLayout, dirty: &[u16], state: &mut RegState<SafeAddress>) {
+        for &i in dirty {
+            let i = i as usize;
             match layout.slots[i].key {
                 SlotKey::Unsigned { index, width } => {
                     let reg = Reg::<UnsignedRegT> { index, width };

@@ -41,6 +41,15 @@ impl<E: Emitter> Compiler for Jit<E> {
                     Ok(p) => p,
                     Err(e) => return Err(CompileError::ExecMem(e)),
                 };
+                // save dirty slots early to avoid iterating over read-only slots for commits
+                let dirty: Box<[u16]> = lowered
+                    .layout
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.dirty)
+                    .map(|(i, _)| i as u16)
+                    .collect();
                 // clone before layout is moved into the block
                 let slots = lowered.layout.slots.clone();
                 Ok(CompiledRequest {
@@ -48,6 +57,7 @@ impl<E: Emitter> Compiler for Jit<E> {
                         entry_pc,
                         covered,
                         layout: lowered.layout,
+                        dirty,
                         exits: lowered.exits,
                         page,
                     },
@@ -83,7 +93,7 @@ impl<E: Emitter> Compiler for Jit<E> {
         let exit_id = unsafe { f(frame_ptr, memory as *mut _ as *mut c_void) };
 
         // spill results from frame back into register state
-        self.frame.commit(&block.layout, state);
+        self.frame.commit(&block.layout, &block.dirty, state);
 
         // exit_id indexes into block.exits to give where to continue
         match block.exits.get(exit_id as usize) {
