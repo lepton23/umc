@@ -22,7 +22,6 @@ use crate::vm::helper;
 
 pub(crate) struct Lowered {
     pub code: Vec<u8>,
-    pub layout: FrameLayout,
     pub exits: Vec<ExitTo>,
 }
 
@@ -33,9 +32,9 @@ enum Flow {
 }
 
 /// state shared by every instruction lowered in a block
-struct Ctx<E: Emitter> {
+struct Ctx<'a, E: Emitter> {
     e: E,
-    layout: FrameLayout,
+    layout: &'a mut FrameLayout,
     exits: Vec<ExitTo>,
     // out-of-line BlockExit::Interpret stubs, emitted after main code
     bails: Vec<(Label, usize)>,
@@ -44,11 +43,11 @@ struct Ctx<E: Emitter> {
     entry: usize,
 }
 
-impl<E: Emitter> Ctx<E> {
-    fn new(pc: usize) -> Self {
+impl<'a, E: Emitter> Ctx<'a, E> {
+    fn new(pc: usize, layout: &'a mut FrameLayout) -> Self {
         Self {
             e: E::new(),
-            layout: FrameLayout::new(),
+            layout,
             exits: Vec::new(),
             bails: Vec::new(),
             pc,
@@ -92,7 +91,6 @@ impl<E: Emitter> Ctx<E> {
         }
         Ok(Lowered {
             code: self.e.finish().map_err(CompileError::Emit)?,
-            layout: self.layout,
             exits: self.exits,
         })
     }
@@ -101,12 +99,13 @@ impl<E: Emitter> Ctx<E> {
 pub(crate) fn lower_block<E: Emitter>(
     program: &[Instruction],
     range: Range<usize>,
+    layout: &mut FrameLayout,
 ) -> Result<Lowered, CompileError> {
     if range.is_empty() {
         return Err(CompileError::EmptyBlock { pc: range.start });
     }
-    let mut cx = Ctx::<E>::new(range.start);
-    cx.e.prologue(&cx.layout);
+    let mut cx = Ctx::<E>::new(range.start, layout);
+    cx.e.prologue(cx.layout);
 
     for pc in range.clone() {
         cx.pc = pc;

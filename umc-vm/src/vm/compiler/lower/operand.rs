@@ -72,7 +72,7 @@ impl JitReg for MemRegT {
     }
 }
 
-impl<E: Emitter> Ctx<E> {
+impl<E: Emitter> Ctx<'_, E> {
     /// native op width for a declared register width
     pub(super) fn width(&self, bits: RegWidth) -> Result<OpWidth, CompileError> {
         match bits {

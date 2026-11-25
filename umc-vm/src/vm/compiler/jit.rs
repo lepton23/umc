@@ -1,4 +1,5 @@
 use crate::vm::compiler::block::scan;
+use crate::vm::compiler::frame::FrameLayout;
 use crate::vm::compiler::lower::lower_block;
 use crate::vm::compiler::{
     BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler, ExecuteError,
@@ -25,6 +26,40 @@ impl<E: Emitter> Jit<E> {
             _emitter: PhantomData,
         }
     }
+
+    pub fn prepare(
+        &mut self,
+        layout: &FrameLayout,
+        state: &RegState<SafeAddress>,
+        constants: &[SafeAddress],
+    ) {
+        self.frame.prepare(layout, state, constants);
+    }
+
+    pub fn commit(&self, layout: &FrameLayout, dirty: &[u16], state: &mut RegState<SafeAddress>) {
+        self.frame.commit(layout, dirty, state);
+    }
+
+    // runs one block on current frame, no prepare or commit
+    pub fn call(
+        &mut self,
+        block: &CompiledBlock,
+        memory: &mut SafeMemoryManager,
+        entry_pc: usize,
+    ) -> Result<BlockExit, ExecuteError> {
+        // convert page to CompiledFn
+        let f = unsafe { block.page.as_fn() };
+
+        // Execute compiled code
+        let exit_id = unsafe { f(self.frame.as_mut_ptr(), memory as *mut _ as *mut c_void) };
+
+        // exit_id indexes into block.exits to give where to continue
+        match block.exits.get(exit_id as usize) {
+            Some(ExitTo::Static(exit)) => Ok(*exit),
+            Some(ExitTo::Slot(slot)) => Ok(BlockExit::Goto(self.frame.get(*slot) as usize)),
+            None => Err(ExecuteError::BadExit { entry_pc, exit_id }),
+        }
+    }
 }
 
 impl<E: Emitter> Compiler for Jit<E> {
@@ -33,30 +68,28 @@ impl<E: Emitter> Compiler for Jit<E> {
         &mut self,
         program: &'p [Instruction],
         entry_pc: usize,
+        layout: &mut FrameLayout,
     ) -> Result<CompiledRequest<'p>, CompileError> {
         let covered = scan(program, entry_pc);
-        match lower_block::<E>(program, covered.clone()) {
+        match lower_block::<E>(program, covered.clone(), layout) {
             Ok(lowered) => {
                 let page = match ExecPage::commit(&lowered.code) {
                     Ok(p) => p,
                     Err(e) => return Err(CompileError::ExecMem(e)),
                 };
                 // save dirty slots early to avoid iterating over read-only slots for commits
-                let dirty: Box<[u16]> = lowered
-                    .layout
+                let dirty: Box<[u16]> = layout
                     .slots
                     .iter()
                     .enumerate()
                     .filter(|(_, s)| s.dirty)
                     .map(|(i, _)| i as u16)
                     .collect();
-                // clone before layout is moved into the block
-                let slots = lowered.layout.slots.clone();
+                let slots = layout.slots.clone();
                 Ok(CompiledRequest {
                     block: CompiledBlock {
                         entry_pc,
                         covered,
-                        layout: lowered.layout,
                         dirty,
                         exits: lowered.exits,
                         page,
@@ -76,31 +109,22 @@ impl<E: Emitter> Compiler for Jit<E> {
     fn execute_block(
         &mut self,
         block: &CompiledBlock,
+        layout: &FrameLayout,
         state: &mut RegState<SafeAddress>,
         memory: &mut SafeMemoryManager,
         constants: &[SafeAddress],
         entry_pc: usize,
     ) -> Result<BlockExit, ExecuteError> {
         // load register states into frame layout
-        self.frame.prepare(&block.layout, state, constants);
+        self.prepare(layout, state, constants);
 
-        // convert page into CompiledFn
-        let f = unsafe { block.page.as_fn() };
-        // convert frame into mut ptr to pass into CompiledFn
-        let frame_ptr = self.frame.as_mut_ptr();
-
-        // Execute compiled code
-        let exit_id = unsafe { f(frame_ptr, memory as *mut _ as *mut c_void) };
+        // call compiled block
+        let exit = self.call(block, memory, entry_pc);
 
         // spill results from frame back into register state
-        self.frame.commit(&block.layout, &block.dirty, state);
+        self.frame.commit(layout, &block.dirty, state);
 
-        // exit_id indexes into block.exits to give where to continue
-        match block.exits.get(exit_id as usize) {
-            Some(ExitTo::Static(exit)) => Ok(*exit),
-            Some(ExitTo::Slot(slot)) => Ok(BlockExit::Goto(self.frame.get(*slot) as usize)),
-            None => Err(ExecuteError::BadExit { entry_pc, exit_id }),
-        }
+        exit
     }
 }
 
@@ -156,12 +180,13 @@ mod tests {
         setup: impl FnOnce(&mut RegState<SafeAddress>),
     ) -> (BlockExit, RegState<SafeAddress>) {
         let mut jit = NativeJit::new();
-        let request = jit.compile_block(program, 0).unwrap();
+        let mut layout = FrameLayout::new();
+        let request = jit.compile_block(program, 0, &mut layout).unwrap();
         let mut state = RegState::new();
         let mut memory = SafeMemoryManager::new();
         setup(&mut state);
         let exit = jit
-            .execute_block(&request.block, &mut state, &mut memory, &[], 0)
+            .execute_block(&request.block, &layout, &mut state, &mut memory, &[], 0)
             .unwrap();
         (exit, state)
     }
@@ -171,7 +196,7 @@ mod tests {
     }
 
     fn compile_err_instrs(program: &[Instruction]) -> CompileError {
-        match NativeJit::new().compile_block(program, 0) {
+        match NativeJit::new().compile_block(program, 0, &mut FrameLayout::new()) {
             Ok(_) => panic!("expected compile error"),
             Err(e) => e,
         }

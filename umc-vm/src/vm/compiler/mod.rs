@@ -6,7 +6,7 @@ mod bridge;
 mod emit;
 pub mod engine;
 mod exec_mem;
-mod frame;
+pub mod frame;
 mod host_mem;
 pub mod jit;
 mod lower;
@@ -60,7 +60,6 @@ pub(crate) enum ExitTo {
 pub struct CompiledBlock {
     entry_pc: usize,
     covered: Range<usize>,
-    layout: FrameLayout,
     dirty: Box<[u16]>,  // slot indices commit writes back; fixed at compile time
     exits: Vec<ExitTo>, // return val -> next pc
     page: ExecPage,     // owns W^X pages
@@ -83,12 +82,14 @@ pub trait Compiler {
         &mut self,
         program: &'p [Instruction],
         entry_pc: usize,
+        layout: &mut FrameLayout,
     ) -> Result<CompiledRequest<'p>, CompileError>;
 
     // load registers from 'state' to frame, call host code, spill registers, return where to continue from
     fn execute_block(
         &mut self,
         block: &CompiledBlock,
+        layout: &FrameLayout,
         state: &mut RegState<SafeAddress>,
         memory: &mut SafeMemoryManager,
         constants: &[SafeAddress],

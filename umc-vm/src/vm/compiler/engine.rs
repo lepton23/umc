@@ -1,5 +1,5 @@
 use crate::vm::{
-    compiler::{BlockExit, CompiledBlock, Compiler, jit::*},
+    compiler::{BlockExit, CompiledBlock, Compiler, frame::FrameLayout, jit::*},
     memory::safe::{SafeAddress, SafeMemoryManager},
     state::RegState,
 };
@@ -18,6 +18,7 @@ pub struct JitEngine {
     pub jit: NativeJit,
     pub states: Vec<PcState>,
     pub blocks: Vec<CompiledBlock>,
+    pub layout: FrameLayout,
     pub threshold: u32,
     pub verbose: bool,
 }
@@ -41,7 +42,7 @@ impl JitEngine {
                 return None;
             }
             // HOT - NOT COMPILED
-            PcState::Cold(_) => match self.jit.compile_block(program, pc) {
+            PcState::Cold(_) => match self.jit.compile_block(program, pc, &mut self.layout) {
                 Ok(request) => {
                     let i = self.blocks.len() as u32;
                     self.blocks.push(request.block);
@@ -55,16 +56,31 @@ impl JitEngine {
             },
             PcState::Compiled(i) => i,
         };
-        // HOT & COMPILED
-        match self
-            .jit
-            .execute_block(&self.blocks[idx as usize], state, memory, constants, pc)
-        {
-            Ok(exit) => Some(exit),
-            Err(_) => {
-                self.states[pc] = PcState::Blacklisted;
-                None
+        // HOT & COMPILED - chain through compiled blocks in one frame
+        self.jit.prepare(&self.layout, state, constants);
+        let (mut cur, mut idx, mut max_idx) = (pc, idx, idx);
+        let exit = loop {
+            match self.jit.call(&self.blocks[idx as usize], memory, cur) {
+                Ok(BlockExit::Goto(next)) => match self.states.get(next) {
+                    Some(&PcState::Compiled(i)) => {
+                        cur = next;
+                        idx = i;
+                        max_idx = max_idx.max(i);
+                    }
+                    // cold, blacklisted or out of range: interpret it
+                    _ => break BlockExit::Goto(next),
+                },
+                Ok(exit) => break exit, // Interpret(at)
+                Err(_) => {
+                    // codegen bug: blacklist block and restart w interpreter
+                    self.states[cur] = PcState::Blacklisted;
+                    break BlockExit::Goto(cur);
+                }
             }
-        }
+        };
+        // later blocks' dirty lists contain earlier ones as layout dirty flags are cumulative
+        self.jit
+            .commit(&self.layout, &self.blocks[max_idx as usize].dirty, state);
+        Some(exit)
     }
 }

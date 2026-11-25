@@ -21,6 +21,8 @@ use crate::vm::compiler::block::is_control_flow;
 #[cfg(feature = "jit")]
 use crate::vm::compiler::engine::{JitEngine, PcState};
 #[cfg(feature = "jit")]
+use crate::vm::compiler::frame::FrameLayout;
+#[cfg(feature = "jit")]
 use crate::vm::compiler::jit::NativeJit;
 use crate::vm::environment::AnyEnvironment;
 use crate::vm::memory::safe::{SafeAddress, SafeMemoryManager};
@@ -117,6 +119,7 @@ impl VirtualMachine {
                 jit: NativeJit::new(),
                 states: vec![PcState::Cold(0); program_len],
                 blocks: Vec::new(),
+                layout: FrameLayout::new(),
                 threshold: options.jit_threshold,
                 verbose: options.verbose,
             },
