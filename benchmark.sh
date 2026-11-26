@@ -18,7 +18,7 @@ wasm_run="${WASM_RUN:-wasmtime run}"
 runs=10
 warmup=2
 cpu=""
-precompile=1
+precompile=0
 check=1
 
 usage() {
@@ -30,7 +30,7 @@ Usage: $0 [options] [benchmark ...]
   -u "cmd"    command that runs a .umc file (default: \$UMC_RUN or "$umc_run")
   -W "cmd"    command that runs a .wasm file (default: \$WASM_RUN or "$wasm_run")
   -c CPU      pin every run to one CPU with taskset
-  -J          don't AOT-precompile wasm (include wasmtime's compile time in the timing)
+  -J          AOT-precompile wasm (and not include wasmtime's compile time in the timing)
   -C          skip the output-equivalence check
 EOF
         exit 1
@@ -43,7 +43,7 @@ while getopts ":r:w:u:W:c:JCh" opt; do
                 u) umc_run=$OPTARG ;;
                 W) wasm_run=$OPTARG ;;
                 c) cpu=$OPTARG ;;
-                J) precompile=0 ;;
+                J) precompile=1 ;;
                 C) check=0 ;;
                 h) usage;;
                 :) echo "Option -$OPTARG requires an argument" >&2; usage ;;
@@ -66,7 +66,7 @@ if [[ -n $cpu ]]; then pin="taskset -c $cpu "; fi
 
 use_wasmtime_aot=0
 if (( precompile )) && [[ $(basename "${wasm_argv[0]}") == wasmtime ]]; then
-use_wasmtime_aot=0; fi
+use_wasmtime_aot=1; fi
 
 have_hyperfine=0
 if command -v hyperfine >/dev/null; then
