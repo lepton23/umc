@@ -58,24 +58,18 @@ impl JitEngine {
         };
         // HOT & COMPILED - chain through compiled blocks in one frame
         self.jit.prepare(&self.layout, state, constants);
-        let (mut cur, mut idx, mut max_idx) = (pc, idx, idx);
+        let (mut idx, mut max_idx) = (idx, idx);
         let exit = loop {
-            match self.jit.call(&self.blocks[idx as usize], memory, cur) {
-                Ok(BlockExit::Goto(next)) => match self.states.get(next) {
+            match self.jit.call(&self.blocks[idx as usize], memory) {
+                BlockExit::Goto(next) => match self.states.get(next) {
                     Some(&PcState::Compiled(i)) => {
-                        cur = next;
                         idx = i;
                         max_idx = max_idx.max(i);
                     }
                     // cold, blacklisted or out of range: interpret it
                     _ => break BlockExit::Goto(next),
                 },
-                Ok(exit) => break exit, // Interpret(at)
-                Err(_) => {
-                    // codegen bug: blacklist block and restart w interpreter
-                    self.states[cur] = PcState::Blacklisted;
-                    break BlockExit::Goto(cur);
-                }
+                exit => break exit, // Interpret(at)
             }
         };
         // later blocks' dirty lists contain earlier ones as layout dirty flags are cumulative

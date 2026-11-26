@@ -104,17 +104,25 @@ impl CoreEmitter for ArmEmitter {
         arm!(self.ops; =>state.dl);
     }
 
-    fn prologue(&mut self, _layout: &FrameLayout) {
+    fn trampoline(&mut self) {
         arm!(self.ops
             ; stp x29, x30, [sp, #-32]!
             ; mov x29, sp
             ; stp X(FRAME_BASE), X(MEM_BASE), [sp, #16]
             ; mov X(FRAME_BASE), x0
             ; mov X(MEM_BASE), x1
+            ; br x2
         );
     }
-    fn ret_exit(&mut self, exit_id: u32) {
-        mov_imm64(&mut self.ops, 0, exit_id as u64);
+    fn ret_exit(&mut self, exit_id: u64) {
+        mov_imm64(&mut self.ops, 0, exit_id);
+        self.exit_stub();
+    }
+    fn exit_slot(&mut self, slot: FrameSlot) {
+        self.load_slot(Tmp::T0, slot, OpWidth::W64);
+        self.exit_stub();
+    }
+    fn exit_stub(&mut self) {
         arm!(self.ops
             ; ldp X(FRAME_BASE), X(MEM_BASE), [sp, #16]
             ; ldp x29, x30, [sp], #32

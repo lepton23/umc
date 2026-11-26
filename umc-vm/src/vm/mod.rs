@@ -157,6 +157,9 @@ impl VirtualMachine {
             }
             self.execute_step();
         }
+        if self.verbose {
+            println!("Native entry calls: {}", self.jit.jit.native_entries);
+        }
     }
 
     #[cfg(feature = "jit")]

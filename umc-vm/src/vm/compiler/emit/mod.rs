@@ -2,7 +2,7 @@ mod aarch64;
 mod x86_64;
 
 use crate::vm::RegWidth;
-use crate::vm::compiler::{FrameLayout, FrameSlot};
+use crate::vm::compiler::FrameSlot;
 use crate::vm::memory::safe::SafeMemoryManager;
 
 // where the block table lives inside the manager MEM_BASE points at
@@ -108,8 +108,12 @@ pub trait CoreEmitter: Sized {
     fn bind(&mut self, l: Label);
 
     /// ABI aware methods
-    fn prologue(&mut self, layout: &FrameLayout);
-    fn ret_exit(&mut self, exit_id: u32);
+    // rather than having a prologue which is called each time a block is called,
+    // each blocks entry address will be its page base and use trampoline function
+    fn trampoline(&mut self);
+    fn ret_exit(&mut self, exit_id: u64);
+    fn exit_slot(&mut self, slot: FrameSlot);
+    fn exit_stub(&mut self);
 
     // call extern "C" fn at f, integer retrun lands in T0
     fn call_host(&mut self, f: usize, args: &[Arg]);

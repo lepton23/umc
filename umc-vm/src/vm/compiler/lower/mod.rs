@@ -17,12 +17,11 @@ use umc_model::reg_model::RegOrConstant;
 
 use crate::vm::compiler::frame::FrameSlot;
 use crate::vm::compiler::{BlockExit, CompileError, frame::FrameLayout};
-use crate::vm::compiler::{ExitTo, emit::*};
+use crate::vm::compiler::{INTERPRET_BIT, emit::*};
 use crate::vm::helper;
 
 pub(crate) struct Lowered {
     pub code: Vec<u8>,
-    pub exits: Vec<ExitTo>,
 }
 
 /// whether the block carries on after an instruction
@@ -35,7 +34,6 @@ enum Flow {
 struct Ctx<'a, E: Emitter> {
     e: E,
     layout: &'a mut FrameLayout,
-    exits: Vec<ExitTo>,
     // out-of-line BlockExit::Interpret stubs, emitted after main code
     bails: Vec<(Label, usize)>,
     // instruction currently being lowered
@@ -48,7 +46,6 @@ impl<'a, E: Emitter> Ctx<'a, E> {
         Self {
             e: E::new(),
             layout,
-            exits: Vec::new(),
             bails: Vec::new(),
             pc,
             entry: pc,
@@ -57,17 +54,15 @@ impl<'a, E: Emitter> Ctx<'a, E> {
 
     /// return from compiled code, continuing at `to`
     fn exit(&mut self, to: BlockExit) {
-        self.ret(ExitTo::Static(to));
+        match to {
+            BlockExit::Goto(pc) => self.e.ret_exit(pc as u64),
+            BlockExit::Interpret(pc) => self.e.ret_exit(INTERPRET_BIT | pc as u64),
+        }
     }
 
     /// return from compiled code, continuing at pc in slot
     fn exit_slot(&mut self, slot: FrameSlot) {
-        self.ret(ExitTo::Slot(slot));
-    }
-
-    fn ret(&mut self, to: ExitTo) {
-        self.exits.push(to);
-        self.e.ret_exit((self.exits.len() - 1) as u32);
+        self.e.exit_slot(slot);
     }
 
     /// hand current instruction to the interpreter when lhs cond rhs holds at runtime
@@ -97,7 +92,6 @@ impl<'a, E: Emitter> Ctx<'a, E> {
         }
         Ok(Lowered {
             code: self.e.finish().map_err(CompileError::Emit)?,
-            exits: self.exits,
         })
     }
 }
@@ -111,7 +105,6 @@ pub(crate) fn lower_block<E: Emitter>(
         return Err(CompileError::EmptyBlock { pc: range.start });
     }
     let mut cx = Ctx::<E>::new(range.start, layout);
-    cx.e.prologue(cx.layout);
 
     for pc in range.clone() {
         cx.pc = pc;

@@ -1,9 +1,11 @@
+use crate::vm::compiler::INTERPRET_BIT;
 use crate::vm::compiler::block::scan;
+use crate::vm::compiler::bridge::EnterFn;
 use crate::vm::compiler::frame::FrameLayout;
 use crate::vm::compiler::lower::lower_block;
 use crate::vm::compiler::{
-    BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler, ExecuteError,
-    ExitTo, bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
+    BlockExit, CompileError, CompiledBlock, CompiledRequest, CompiledStats, Compiler,
+    bridge::FrameBuffer, emit::Emitter, emit::NativeEmitter, exec_mem::ExecPage,
 };
 use crate::vm::memory::safe::SafeMemoryManager;
 use crate::vm::{RegState, SafeAddress};
@@ -14,16 +16,43 @@ use umc_model::instructions::Instruction;
 
 pub type NativeJit = Jit<NativeEmitter>;
 
+pub(crate) struct Runtime {
+    page: ExecPage,
+    pub(crate) enter: EnterFn,
+    stub: usize,
+}
+
+impl Runtime {
+    pub(crate) fn new<E: Emitter>() -> Self {
+        let mut t = E::new();
+        t.trampoline();
+        let mut code = t.finish().expect("trampoline emit");
+        let mut s = E::new();
+        s.exit_stub();
+        let stub_off = code.len();
+        code.extend(s.finish().expect("exit stub emit"));
+        // shortcut: panics if OS refuses one exec page at startup, can return Result from Jit::new if thats a problem down the line
+        let page = ExecPage::commit(&code).expect("runtime page");
+        let enter = unsafe { page.as_fn() };
+        let stub = page.addr() + stub_off;
+        Self { page, enter, stub }
+    }
+}
+
 pub struct Jit<E: Emitter> {
     frame: FrameBuffer,
     _emitter: PhantomData<E>,
+    runtime: Runtime,
+    pub native_entries: u64,
 }
 
 impl<E: Emitter> Jit<E> {
     pub fn new() -> Self {
         Self {
             frame: FrameBuffer::new(),
+            runtime: Runtime::new::<E>(),
             _emitter: PhantomData,
+            native_entries: 0,
         }
     }
 
@@ -41,23 +70,22 @@ impl<E: Emitter> Jit<E> {
     }
 
     // runs one block on current frame, no prepare or commit
-    pub fn call(
-        &mut self,
-        block: &CompiledBlock,
-        memory: &mut SafeMemoryManager,
-        entry_pc: usize,
-    ) -> Result<BlockExit, ExecuteError> {
-        // convert page to CompiledFn
-        let f = unsafe { block.page.as_fn() };
+    pub fn call(&mut self, block: &CompiledBlock, memory: &mut SafeMemoryManager) -> BlockExit {
+        // Execute compiled code with Runtime.EnterFn
+        let exit_pc = unsafe {
+            (self.runtime.enter)(
+                self.frame.as_mut_ptr(),
+                memory as *mut _ as *mut c_void,
+                block.page.addr(),
+            )
+        };
+        self.native_entries += 1;
 
-        // Execute compiled code
-        let exit_id = unsafe { f(self.frame.as_mut_ptr(), memory as *mut _ as *mut c_void) };
-
-        // exit_id indexes into block.exits to give where to continue
-        match block.exits.get(exit_id as usize) {
-            Some(ExitTo::Static(exit)) => Ok(*exit),
-            Some(ExitTo::Slot(slot)) => Ok(BlockExit::Goto(self.frame.get(*slot) as usize)),
-            None => Err(ExecuteError::BadExit { entry_pc, exit_id }),
+        // high bit set means hand the pc to the interpreter
+        if exit_pc & INTERPRET_BIT != 0 {
+            BlockExit::Interpret((exit_pc & !INTERPRET_BIT) as usize)
+        } else {
+            BlockExit::Goto(exit_pc as usize)
         }
     }
 }
@@ -91,7 +119,6 @@ impl<E: Emitter> Compiler for Jit<E> {
                         entry_pc,
                         covered,
                         dirty,
-                        exits: lowered.exits,
                         page,
                     },
                     stats: CompiledStats {
@@ -113,13 +140,12 @@ impl<E: Emitter> Compiler for Jit<E> {
         state: &mut RegState<SafeAddress>,
         memory: &mut SafeMemoryManager,
         constants: &[SafeAddress],
-        entry_pc: usize,
-    ) -> Result<BlockExit, ExecuteError> {
+    ) -> BlockExit {
         // load register states into frame layout
         self.prepare(layout, state, constants);
 
         // call compiled block
-        let exit = self.call(block, memory, entry_pc);
+        let exit = self.call(block, memory);
 
         // spill results from frame back into register state
         self.frame.commit(layout, &block.dirty, state);
@@ -195,9 +221,7 @@ mod tests {
         let mut state = RegState::new();
         let mut memory = SafeMemoryManager::new();
         setup(&mut state);
-        let exit = jit
-            .execute_block(&request.block, &layout, &mut state, &mut memory, &[], 0)
-            .unwrap();
+        let exit = jit.execute_block(&request.block, &layout, &mut state, &mut memory, &[]);
         (exit, state, memory)
     }
 
@@ -510,38 +534,34 @@ mod tests {
             // reads past end
             (
                 "alloc m:0, #4
-load u64:1, m:0
-",
+                load u64:1, m:0
+                ",
                 1,
             ),
             (
                 "alloc m:0, #4
-add m:0, m:0, #1
-load u32:1, m:0
-",
+                add m:0, m:0, #1
+                load u32:1, m:0
+                ",
                 2,
             ),
             (
                 "alloc m:0, #4
-add m:0, m:0, #4
-store m:0, u8:1
-",
+                add m:0, m:0, #4
+                store m:0, u8:1
+                ",
                 2,
             ),
             // freed block
             (
                 "alloc m:0, #8
-free m:0
-load u8:1, m:0
-",
+                free m:0
+                load u8:1, m:0
+                ",
                 2,
             ),
             // unset register is the NULL block
-            (
-                "store m:3, u64:1
-",
-                0,
-            ),
+            ("store m:3, u64:1\n", 0),
         ];
         for (src, pc) in cases {
             let (exit, _) = run_block(src, &[]);

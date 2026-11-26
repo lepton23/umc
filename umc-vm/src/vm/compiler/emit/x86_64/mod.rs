@@ -17,7 +17,7 @@ const MEM_BASE: AsmRegister64 = r12;
 #[cfg(windows)]
 mod sys {
     use super::*;
-    pub(super) const ARGS: [AsmRegister64; 2] = [rcx, rdx];
+    pub(super) const ARGS: [AsmRegister64; 3] = [rcx, rdx, r8];
     pub(super) const CALL_ARGS: [AsmRegister64; 4] = [rcx, rdx, r8, r9];
     pub(super) const SHADOW: i32 = 32;
 }
@@ -25,7 +25,7 @@ mod sys {
 #[cfg(unix)]
 mod sys {
     use super::*;
-    pub(super) const ARGS: [AsmRegister64; 2] = [rdi, rsi];
+    pub(super) const ARGS: [AsmRegister64; 3] = [rdi, rsi, rdx];
     pub(super) const CALL_ARGS: [AsmRegister64; 4] = [rdi, rsi, rdx, rcx];
     pub(super) const SHADOW: i32 = 0;
 }
@@ -130,17 +130,28 @@ impl CoreEmitter for X86Emitter {
     }
 
     /// ABI aware methods
-    fn prologue(&mut self, _layout: &FrameLayout) {
+    fn trampoline(&mut self) {
+        // push stack frame & membase then mov args in from ARGS then JMP to arg 3
         record(&mut self.error, self.asm.push(FRAME_BASE));
         record(&mut self.error, self.asm.push(MEM_BASE));
         // entry rsp is 8 mod 16, two pushes leave it there, realign so host calls see 16
         record(&mut self.error, self.asm.sub(rsp, 8));
         record(&mut self.error, self.asm.mov(FRAME_BASE, ARGS[0]));
         record(&mut self.error, self.asm.mov(MEM_BASE, ARGS[1]));
+        record(&mut self.error, self.asm.jmp(ARGS[2]));
     }
-    fn ret_exit(&mut self, exit_id: u32) {
+    // ret_exit passes exit_id into eax for return calling convention
+    fn ret_exit(&mut self, exit_id: u64) {
         // rax / eax for return values
-        record(&mut self.error, self.asm.mov(eax, exit_id)); // CompiledFn returns u32 so mov into eax for same result ith short form
+        record(&mut self.error, self.asm.mov(rax, exit_id));
+        self.exit_stub();
+    }
+    fn exit_slot(&mut self, slot: FrameSlot) {
+        self.load_slot(Tmp::T0, slot, OpWidth::W64);
+        self.exit_stub();
+    }
+    // pop stack & mem base then return
+    fn exit_stub(&mut self) {
         record(&mut self.error, self.asm.add(rsp, 8));
         record(&mut self.error, self.asm.pop(MEM_BASE));
         record(&mut self.error, self.asm.pop(FRAME_BASE));
@@ -171,7 +182,7 @@ impl CoreEmitter for X86Emitter {
             record(&mut self.error, r);
         }
         // Win64 ABI requires 32 bytes of shadow space before calls so push then pop it after call
-        // rsp is 16-aligned, 8 mod 16 on entry, plus prologues push rbx
+        // rsp is 16-aligned, 8 mod 16 on entry, plus entry trampoline pushes rbx
         if SHADOW > 0 {
             record(&mut self.error, self.asm.sub(rsp, SHADOW));
         }

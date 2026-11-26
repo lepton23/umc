@@ -59,6 +59,29 @@ fn disasm_round_trip() {
 }
 
 #[test]
+fn trampoline_saves_bases_and_jumps_to_entry() {
+    let mut e = X86Emitter::new();
+    e.trampoline();
+    #[cfg(windows)]
+    let args = ["mov %rcx,%rbx", "mov %rdx,%r12", "jmp *%r8"];
+    #[cfg(unix)]
+    let args = ["mov %rdi,%rbx", "mov %rsi,%r12", "jmp *%rdx"];
+    let mut want = vec!["push %rbx", "push %r12", "sub $8,%rsp"];
+    want.extend(args);
+    assert_eq!(disasm(&e.finish().unwrap()), want);
+}
+
+#[test]
+fn exit_stub_restores_bases_and_returns() {
+    let mut e = X86Emitter::new();
+    e.exit_stub();
+    assert_eq!(
+        disasm(&e.finish().unwrap()),
+        ["add $8,%rsp", "pop %r12", "pop %rbx", "ret"]
+    );
+}
+
+#[test]
 fn mov_imm_picks_shortest_encoding() {
     let mut e = X86Emitter::new();
     e.mov_imm(Tmp::T0, 7, OpWidth::W64); // fits u32 -> zero-extending 32 bit mov
@@ -181,22 +204,24 @@ fn branch_to_unbound_label_is_an_error() {
 #[cfg(target_arch = "x86_64")]
 mod exec {
     use super::*;
+    use crate::vm::compiler::exec_mem::ExecPage;
+
+    // blocks have no prologue, so enter through a trampoline page like Jit::call does
+    fn run(e: X86Emitter, frame: &mut [u64]) -> u64 {
+        let mut t = X86Emitter::new();
+        t.trampoline();
+        let tramp = ExecPage::commit(&t.finish().unwrap()).unwrap();
+        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        unsafe { tramp.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut(), page.addr()) }
+    }
 
     // emit a block, commit it to exec memory and run it on real frame
     #[test]
     fn emitted_block_runs_on_frame() {
-        use crate::vm::compiler::exec_mem::ExecPage;
-        use rustc_hash::FxHashMap;
-
-        let layout = FrameLayout {
-            slots: Vec::new(),
-            lookup: FxHashMap::default(),
-        };
 
         // slot2 = slot0 - slot1; exit 2 if slot0 < slot1 (signed) else exit 1
         let mut e = X86Emitter::new();
         let less = e.new_label();
-        e.prologue(&layout);
         e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
         e.alu(
@@ -219,29 +244,28 @@ mod exec {
         e.ret_exit(1);
         e.bind(less);
         e.ret_exit(2);
+        let code = e.finish().unwrap();
 
-        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
+        let mut t = X86Emitter::new();
+        t.trampoline();
+        let tramp = ExecPage::commit(&t.finish().unwrap()).unwrap();
+        let page = ExecPage::commit(&code).unwrap();
+        let enter = |frame: &mut [u64]| unsafe {
+            tramp.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut(), page.addr())
+        };
 
         let mut frame = [10u64, 3, 0];
-        let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        let exit = enter(&mut frame);
         assert_eq!((exit, frame), (1, [10, 3, 7]));
 
         let mut frame = [3u64, 10, 0];
-        let exit = unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        let exit = enter(&mut frame);
         assert_eq!((exit, frame), (2, [3, 10, (-7i64) as u64]));
     }
 
     // run dst = slot0 op rhs for each (op, rhs) with rdx dirtied beforehand, results stored from slot 2 onwards
     fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
-        use crate::vm::compiler::exec_mem::ExecPage;
-        use rustc_hash::FxHashMap;
-
-        let layout = FrameLayout {
-            slots: Vec::new(),
-            lookup: FxHashMap::default(),
-        };
         let mut e = X86Emitter::new();
-        e.prologue(&layout);
         for (i, (op, rhs)) in ops.iter().enumerate() {
             e.mov_imm(Tmp::T2, 0xDEAD, OpWidth::W64); // garbage high half of dividend
             e.load_slot(Tmp::T0, FrameSlot::new(0), w);
@@ -250,8 +274,7 @@ mod exec {
             e.store_slot(FrameSlot::new(2 + i as u16), Tmp::T0, w);
         }
         e.ret_exit(0);
-        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        run(e, frame);
     }
 
     #[test]
@@ -282,15 +305,7 @@ mod exec {
 
     #[test]
     fn div_mod_divisor_aliasing_rax_or_rdx() {
-        use crate::vm::compiler::exec_mem::ExecPage;
-        use rustc_hash::FxHashMap;
-
-        let layout = FrameLayout {
-            slots: Vec::new(),
-            lookup: FxHashMap::default(),
-        };
         let mut e = X86Emitter::new();
-        e.prologue(&layout);
         // slot2 = slot0 / T0 where T0 = slot1 (divisor in rax), lhs in rcx
         e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
@@ -316,10 +331,8 @@ mod exec {
         );
         e.store_slot(FrameSlot::new(3), Tmp::T1, OpWidth::W64);
         e.ret_exit(0);
-        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-
         let mut frame = [100u64, 3, 0, 0];
-        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        run(e, &mut frame);
         assert_eq!(frame, [100, 3, 33, 1]);
     }
 
@@ -330,9 +343,7 @@ mod exec {
     // args in reverse Tmp order would clobber each other on Win64 without staging
     #[test]
     fn call_host_stages_tmp_args() {
-        use crate::vm::compiler::exec_mem::ExecPage;
         let mut e = X86Emitter::new();
-        e.prologue(&FrameLayout::new());
         e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T2, FrameSlot::new(1), OpWidth::W64);
         e.call_host(
@@ -341,9 +352,8 @@ mod exec {
         );
         e.store_slot(FrameSlot::new(2), Tmp::T0, OpWidth::W64);
         e.ret_exit(0);
-        let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
         let mut frame = [10u64, 3, 0];
-        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) };
+        run(e, &mut frame);
         assert_eq!(frame[2], 3u64.wrapping_sub(10));
     }
 }

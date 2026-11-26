@@ -9,7 +9,7 @@ use crate::vm::widths::int::IntWidth;
 use crate::vm::widths::uint::UIntWidth;
 use crate::vm::{RegState, SafeAddress, helper};
 
-pub type CompiledFn = unsafe extern "C" fn(frame: *mut u64, mem: *mut c_void) -> u32;
+pub type EnterFn = unsafe extern "C" fn(frame: *mut u64, mem: *mut c_void, entry: usize) -> u64;
 
 pub(crate) const NULL_BLOCK: u64 = u64::MAX; // SafeAddress::NULL block id
 

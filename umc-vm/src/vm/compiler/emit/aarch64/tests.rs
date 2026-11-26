@@ -55,6 +55,34 @@ fn disasm_round_trip() {
     assert_eq!(text, ["mov x19, x0", "blr x16", "ret"])
 }
 
+// expected strings unverified against yaxpeax formatting: check the printed output on first run
+#[test]
+fn trampoline_saves_bases_and_jumps_to_entry() {
+    let mut e = ArmEmitter::new();
+    e.trampoline();
+    assert_eq!(
+        disasm(&e.finish().unwrap()),
+        [
+            "stp x29, x30, [sp, #-0x20]!",
+            "mov x29, sp",
+            "stp x19, x20, [sp, #0x10]",
+            "mov x19, x0",
+            "mov x20, x1",
+            "br x2",
+        ]
+    );
+}
+
+#[test]
+fn exit_stub_restores_bases_and_returns() {
+    let mut e = ArmEmitter::new();
+    e.exit_stub();
+    assert_eq!(
+        disasm(&e.finish().unwrap()),
+        ["ldp x19, x20, [sp, #0x10]", "ldp x29, x30, [sp], #0x20", "ret"]
+    );
+}
+
 #[test]
 fn mov_imm_emits_movz_then_movk_per_nonzero_chunk() {
     let mut e = ArmEmitter::new();
@@ -193,16 +221,19 @@ mod exec {
     use super::*;
     use crate::vm::compiler::exec_mem::ExecPage;
 
-    fn run(e: ArmEmitter, frame: &mut [u64]) -> u32 {
+    // blocks have no prologue, so enter through a trampoline page like Jit::call does
+    fn run(e: ArmEmitter, frame: &mut [u64]) -> u64 {
+        let mut t = ArmEmitter::new();
+        t.trampoline();
+        let tramp = ExecPage::commit(&t.finish().unwrap()).unwrap();
         let page = ExecPage::commit(&e.finish().unwrap()).unwrap();
-        unsafe { page.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut()) }
+        unsafe { tramp.as_fn()(frame.as_mut_ptr(), std::ptr::null_mut(), page.addr()) }
     }
 
     // slot2 = slot0 - slot1; exit 2 if slot0 < slot1 (signed) else exit 1
     fn sub_and_branch() -> ArmEmitter {
         let mut e = ArmEmitter::new();
         let less = e.new_label();
-        e.prologue(&FrameLayout::new());
         e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
         e.alu(
@@ -243,7 +274,6 @@ mod exec {
     // run dst = slot0 op rhs for each (op, rhs), results stored from slot 2 onwards
     fn run_div_mod(w: OpWidth, ops: &[(AluOp, Src)], frame: &mut [u64]) {
         let mut e = ArmEmitter::new();
-        e.prologue(&FrameLayout::new());
         for (i, (op, rhs)) in ops.iter().enumerate() {
             e.load_slot(Tmp::T0, FrameSlot::new(0), w);
             e.load_slot(Tmp::T1, FrameSlot::new(1), w);
@@ -279,7 +309,6 @@ mod exec {
     #[test]
     fn div_mod_dst_aliasing_divisor() {
         let mut e = ArmEmitter::new();
-        e.prologue(&FrameLayout::new());
         // slot2 = slot0 / T0 where T0 = slot1
         e.load_slot(Tmp::T1, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T0, FrameSlot::new(1), OpWidth::W64);
@@ -319,7 +348,6 @@ mod exec {
     #[test]
     fn call_host_stages_tmp_args() {
         let mut e = ArmEmitter::new();
-        e.prologue(&FrameLayout::new());
         e.load_slot(Tmp::T0, FrameSlot::new(0), OpWidth::W64);
         e.load_slot(Tmp::T1, FrameSlot::new(1), OpWidth::W64);
         e.call_host(

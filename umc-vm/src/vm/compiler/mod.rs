@@ -25,6 +25,8 @@ use umc_model::instructions::Instruction;
 
 use std::ops::Range;
 
+pub(crate) const INTERPRET_BIT: u64 = 1 << 63;
+
 // block could not be compiled, entry index is blacklisted and interpreted for rest of program
 #[derive(Debug)]
 pub enum CompileError {
@@ -32,12 +34,6 @@ pub enum CompileError {
     EmptyBlock { pc: usize },
     Emit(EmitError),
     ExecMem(ExecMemError),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ExecuteError {
-    // codegen bugs - invalid exit id
-    BadExit { entry_pc: usize, exit_id: u32 },
 }
 
 // where control goes when block exits
@@ -50,19 +46,11 @@ pub enum BlockExit {
     Interpret(usize),
 }
 
-// how compiled exit picks next pc
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExitTo {
-    Static(BlockExit),
-    Slot(FrameSlot), // instr address in frame slot
-}
-
 pub struct CompiledBlock {
     entry_pc: usize,
     covered: Range<usize>,
-    dirty: Box<[u16]>,  // slot indices commit writes back; fixed at compile time
-    exits: Vec<ExitTo>, // return val -> next pc
-    page: ExecPage,     // owns W^X pages
+    dirty: Box<[u16]>, // slot indices commit writes back; fixed at compile time
+    page: ExecPage,    // owns W^X pages
 }
 
 pub struct CompiledRequest<'p> {
@@ -93,6 +81,5 @@ pub trait Compiler {
         state: &mut RegState<SafeAddress>,
         memory: &mut SafeMemoryManager,
         constants: &[SafeAddress],
-        entry_pc: usize,
-    ) -> Result<BlockExit, ExecuteError>;
+    ) -> BlockExit;
 }

@@ -11,7 +11,7 @@ mod win;
 #[cfg(windows)]
 use win as sys;
 
-use crate::vm::compiler::bridge::CompiledFn;
+use crate::vm::compiler::bridge::EnterFn;
 
 /// hardcoded page size just for assurance
 const PAGE_SIZE: usize = 4096;
@@ -53,8 +53,12 @@ impl ExecPage {
         self.len
     }
 
-    pub unsafe fn as_fn(&self) -> CompiledFn {
-        unsafe { core::mem::transmute::<*mut c_void, CompiledFn>(self.ptr.as_ptr()) }
+    pub fn addr(&self) -> usize {
+        self.ptr.as_ptr() as usize
+    }
+
+    pub unsafe fn as_fn(&self) -> EnterFn {
+        unsafe { core::mem::transmute::<*mut c_void, EnterFn>(self.ptr.as_ptr()) }
     }
 }
 
@@ -88,7 +92,7 @@ mod tests {
         assert_eq!(page.len(), PAGE_SIZE);
 
         let mut frame = 0u64; // dummy frame
-        let result = unsafe { page.as_fn()(&mut frame, std::ptr::null_mut()) };
+        let result = unsafe { page.as_fn()(&mut frame, std::ptr::null_mut(), 0) };
         assert_eq!(result, 7);
     }
 
