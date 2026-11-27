@@ -94,14 +94,11 @@ dataset=$(cat "$ir/DATASET" 2>/dev/null || echo UNKNOWN)
 configs=(native-phis native-no-phis umc-phis umc-no-phis wasm-phis wasm-no-phis) # first = baseline
 
 mkdir -p "$build"/native/{phis,no-phis} "$build"/wasm/{phis,no-phis} "$build/out" "$results_dir"
-<<<<<<< HEAD
 if (( arm )); then
 	csv="$results_dir/results-$dataset-AArch64-$(date +%Y%m%d-%H%M%S).csv"
 else
 	csv="$results_dir/results-$dataset-x86_64-$(date +%Y%m%d-%H%M%S).csv"
 fi
-
-csv="$results_dir/results-$dataset-$(date +%Y%m%d-%H%M%S).csv"
 echo "benchmark,config,mean_s,stddev_s,min_s,max_s,output,checksum" > "$csv"
 
 # Native polybench runtime, same flags as the kernels
