@@ -120,6 +120,11 @@ pub trait CoreEmitter: Sized {
 
     fn jump(&mut self, target: Label);
 
+    // jump to static page address of compiled block
+    fn dispatch_static(&mut self, pc: u64, slot_addr: u64);
+    // jump to address stored in slot
+    fn dispatch_slot(&mut self, slot: FrameSlot, table_base: u64, len: u64);
+
     fn finish(self) -> Result<Vec<u8>, EmitError>;
 }
 

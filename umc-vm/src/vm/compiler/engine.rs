@@ -56,25 +56,13 @@ impl JitEngine {
             },
             PcState::Compiled(i) => i,
         };
-        // HOT & COMPILED - chain through compiled blocks in one frame
+        // HOT & COMPILED - natively chain through compiled blocks in one frame
+        // prepare runs after any compile, so every block reachable from this table should have its slots already in the framelayout
         self.jit.prepare(&self.layout, state, constants);
-        let (mut idx, mut max_idx) = (idx, idx);
-        let exit = loop {
-            match self.jit.call(&self.blocks[idx as usize], memory) {
-                BlockExit::Goto(next) => match self.states.get(next) {
-                    Some(&PcState::Compiled(i)) => {
-                        idx = i;
-                        max_idx = max_idx.max(i);
-                    }
-                    // cold, blacklisted or out of range: interpret it
-                    _ => break BlockExit::Goto(next),
-                },
-                exit => break exit, // Interpret(at)
-            }
-        };
+        let exit = self.jit.call(&self.blocks[idx as usize], memory);
         // later blocks' dirty lists contain earlier ones as layout dirty flags are cumulative
         self.jit
-            .commit(&self.layout, &self.blocks[max_idx as usize].dirty, state);
+            .commit(&self.layout, &self.blocks.last().unwrap().dirty, state);
         Some(exit)
     }
 }

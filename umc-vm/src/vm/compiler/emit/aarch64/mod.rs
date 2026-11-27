@@ -166,6 +166,22 @@ impl CoreEmitter for ArmEmitter {
         arm!(self.ops ; b =>dl)
     }
 
+    fn dispatch_static(&mut self, pc: u64, slot_addr: u64) {
+        mov_imm64(&mut self.ops, 0, pc);
+        mov_imm64(&mut self.ops, SCRATCH, slot_addr);
+        arm!(self.ops ; ldr X(SCRATCH), [X(SCRATCH)] ; br X(SCRATCH)); // using x16 (scratch reg / IP0) "intra-procedure call register"
+    }
+    fn dispatch_slot(&mut self, slot: FrameSlot, table_base: u64, len: u64) {
+        self.load_slot(Tmp::T0, slot, OpWidth::W64);
+        mov_imm64(&mut self.ops, 16, table_base);
+        mov_imm64(&mut self.ops, 17, len);
+        arm!(self.ops ; cmp x0, x17);
+        let ret = self.new_label();
+        arm!(self.ops ; b.hs =>self.labels[ret.0 as usize].dl ; ldr x16, [x16, x0, lsl #3] ; br x16);
+        self.bind(ret);
+        self.exit_stub();
+    }
+
     fn finish(mut self) -> Result<Vec<u8>, EmitError> {
         if let Some(e) = self.error.take() {
             return Err(e);

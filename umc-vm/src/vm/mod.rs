@@ -116,7 +116,7 @@ impl VirtualMachine {
             environment: AnyEnvironment::new(),
             #[cfg(feature = "jit")]
             jit: JitEngine {
-                jit: NativeJit::new(),
+                jit: NativeJit::new(program_len),
                 states: vec![PcState::Cold(0); program_len],
                 blocks: Vec::new(),
                 layout: FrameLayout::new(),

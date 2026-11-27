@@ -16,6 +16,7 @@ use umc_model::instructions::*;
 use umc_model::reg_model::RegOrConstant;
 
 use crate::vm::compiler::frame::FrameSlot;
+use crate::vm::compiler::jit::Table;
 use crate::vm::compiler::{BlockExit, CompileError, frame::FrameLayout};
 use crate::vm::compiler::{INTERPRET_BIT, emit::*};
 use crate::vm::helper;
@@ -34,6 +35,7 @@ enum Flow {
 struct Ctx<'a, E: Emitter> {
     e: E,
     layout: &'a mut FrameLayout,
+    table: Table,
     // out-of-line BlockExit::Interpret stubs, emitted after main code
     bails: Vec<(Label, usize)>,
     // instruction currently being lowered
@@ -42,10 +44,11 @@ struct Ctx<'a, E: Emitter> {
 }
 
 impl<'a, E: Emitter> Ctx<'a, E> {
-    fn new(pc: usize, layout: &'a mut FrameLayout) -> Self {
+    fn new(pc: usize, layout: &'a mut FrameLayout, table: Table) -> Self {
         Self {
             e: E::new(),
             layout,
+            table,
             bails: Vec::new(),
             pc,
             entry: pc,
@@ -55,14 +58,19 @@ impl<'a, E: Emitter> Ctx<'a, E> {
     /// return from compiled code, continuing at `to`
     fn exit(&mut self, to: BlockExit) {
         match to {
-            BlockExit::Goto(pc) => self.e.ret_exit(pc as u64),
+            BlockExit::Goto(pc) if pc < self.table.len => {
+                self.e
+                    .dispatch_static(pc as u64, (self.table.base + pc * 8) as u64);
+            }
+            BlockExit::Goto(pc) => return self.e.ret_exit(pc as u64),
             BlockExit::Interpret(pc) => self.e.ret_exit(INTERPRET_BIT | pc as u64),
         }
     }
 
     /// return from compiled code, continuing at pc in slot
     fn exit_slot(&mut self, slot: FrameSlot) {
-        self.e.exit_slot(slot);
+        self.e
+            .dispatch_slot(slot, self.table.base as u64, self.table.len as u64);
     }
 
     /// hand current instruction to the interpreter when lhs cond rhs holds at runtime
@@ -100,11 +108,12 @@ pub(crate) fn lower_block<E: Emitter>(
     program: &[Instruction],
     range: Range<usize>,
     layout: &mut FrameLayout,
+    table: Table,
 ) -> Result<Lowered, CompileError> {
     if range.is_empty() {
         return Err(CompileError::EmptyBlock { pc: range.start });
     }
-    let mut cx = Ctx::<E>::new(range.start, layout);
+    let mut cx = Ctx::<E>::new(range.start, layout, table);
 
     for pc in range.clone() {
         cx.pc = pc;

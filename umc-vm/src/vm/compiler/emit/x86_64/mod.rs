@@ -202,6 +202,29 @@ impl CoreEmitter for X86Emitter {
         record(&mut self.error, r);
     }
 
+    fn dispatch_static(&mut self, pc: u64, slot_addr: u64) {
+        record(&mut self.error, self.asm.mov(rax, pc));
+        record(&mut self.error, self.asm.mov(SCRATCH64, slot_addr));
+        record(&mut self.error, self.asm.jmp(qword_ptr(SCRATCH64)));
+    }
+    fn dispatch_slot(&mut self, slot: FrameSlot, table_base: u64, len: u64) {
+        self.load_slot(Tmp::T0, slot, OpWidth::W64);
+        record(&mut self.error, self.asm.mov(r11, len));
+        record(&mut self.error, self.asm.cmp(r64(Tmp::T0), r11));
+        let ret = self.new_label();
+        record(
+            &mut self.error,
+            self.asm.jae(self.labels[ret.0 as usize].iced),
+        );
+        record(&mut self.error, self.asm.mov(SCRATCH64, table_base));
+        record(
+            &mut self.error,
+            self.asm.jmp(qword_ptr(SCRATCH64 + r64(Tmp::T0) * 8)),
+        );
+        self.bind(ret);
+        self.exit_stub();
+    }
+
     fn finish(mut self) -> Result<Vec<u8>, EmitError> {
         if let Some(e) = self.error.take() {
             return Err(e);

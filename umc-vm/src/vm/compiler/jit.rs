@@ -17,7 +17,7 @@ use umc_model::instructions::Instruction;
 pub type NativeJit = Jit<NativeEmitter>;
 
 pub(crate) struct Runtime {
-    page: ExecPage,
+    _page: ExecPage,
     pub(crate) enter: EnterFn,
     stub: usize,
 }
@@ -35,23 +35,37 @@ impl Runtime {
         let page = ExecPage::commit(&code).expect("runtime page");
         let enter = unsafe { page.as_fn() };
         let stub = page.addr() + stub_off;
-        Self { page, enter, stub }
+        Self {
+            _page: page,
+            enter,
+            stub,
+        }
     }
+}
+
+pub struct Table {
+    pub base: usize,
+    pub len: usize,
 }
 
 pub struct Jit<E: Emitter> {
     frame: FrameBuffer,
     _emitter: PhantomData<E>,
     runtime: Runtime,
+    table: Box<[usize]>,
     pub native_entries: u64,
 }
 
 impl<E: Emitter> Jit<E> {
-    pub fn new() -> Self {
+    pub fn new(program_len: usize) -> Self {
+        let runtime = Runtime::new::<E>();
+        // vec![x; n] allocates exactly n, into_boxed_slice drops any spare capacity
+        let table = vec![runtime.stub; program_len].into_boxed_slice();
         Self {
             frame: FrameBuffer::new(),
-            runtime: Runtime::new::<E>(),
+            runtime,
             _emitter: PhantomData,
+            table,
             native_entries: 0,
         }
     }
@@ -99,12 +113,23 @@ impl<E: Emitter> Compiler for Jit<E> {
         layout: &mut FrameLayout,
     ) -> Result<CompiledRequest<'p>, CompileError> {
         let covered = scan(program, entry_pc);
-        match lower_block::<E>(program, covered.clone(), layout) {
+        // table entry is reset to stub before ExecPage is dropped
+        match lower_block::<E>(
+            program,
+            covered.clone(),
+            layout,
+            Table {
+                base: self.table.as_ptr() as usize,
+                len: self.table.len(),
+            },
+        ) {
             Ok(lowered) => {
                 let page = match ExecPage::commit(&lowered.code) {
                     Ok(p) => p,
                     Err(e) => return Err(CompileError::ExecMem(e)),
                 };
+                // save address of compiled page in jump table
+                self.table[entry_pc] = page.addr();
                 // save dirty slots early to avoid iterating over read-only slots for commits
                 let dirty: Box<[u16]> = layout
                     .slots
@@ -215,7 +240,7 @@ mod tests {
         program: &[Instruction],
         setup: impl FnOnce(&mut RegState<SafeAddress>),
     ) -> (BlockExit, RegState<SafeAddress>, SafeMemoryManager) {
-        let mut jit = NativeJit::new();
+        let mut jit = NativeJit::new(program.len());
         let mut layout = FrameLayout::new();
         let request = jit.compile_block(program, 0, &mut layout).unwrap();
         let mut state = RegState::new();
@@ -230,7 +255,7 @@ mod tests {
     }
 
     fn compile_err_instrs(program: &[Instruction]) -> CompileError {
-        match NativeJit::new().compile_block(program, 0, &mut FrameLayout::new()) {
+        match NativeJit::new(program.len()).compile_block(program, 0, &mut FrameLayout::new()) {
             Ok(_) => panic!("expected compile error"),
             Err(e) => e,
         }
