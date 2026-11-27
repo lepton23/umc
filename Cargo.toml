@@ -4,9 +4,10 @@ members = ["umc-model", "umcc", "umc-vm", "umc-llvm"]
 
 [profile.release]
 lto = "fat"
-codegen-units = 1
-opt-level = 3
-panic = "abort"
-strip = "none"
-overflow-checks = false
-incremental = false
+# uncomment for final submission
+# codegen-units = 1
+# opt-level = 3
+# panic = "abort"
+# strip = "none"
+# overflow-checks = false
+# incremental = false

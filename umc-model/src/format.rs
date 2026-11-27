@@ -490,7 +490,8 @@ impl DisplayAssembly for PowParams {
         f: &mut std::fmt::Formatter<'_>,
         opts: &DisplayAssemblyParams,
     ) -> std::fmt::Result {
-        let _ = write!(f, "{}", self.dst);
+        self.dst.fmt_assembly(f, opts)?;
+        write!(f, ", ")?;
         ParamPair(&self.op1, &self.op2).fmt_assembly(f, opts)?;
         Ok(())
     }
