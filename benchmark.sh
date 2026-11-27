@@ -94,12 +94,15 @@ dataset=$(cat "$ir/DATASET" 2>/dev/null || echo UNKNOWN)
 configs=(native-phis native-no-phis umc-phis umc-no-phis wasm-phis wasm-no-phis) # first = baseline
 
 mkdir -p "$build"/native/{phis,no-phis} "$build"/wasm/{phis,no-phis} "$build/out" "$results_dir"
+<<<<<<< HEAD
 if (( arm )); then
 	csv="$results_dir/results-$dataset-AArch64-$(date +%Y%m%d-%H%M%S).csv"
 else
 	csv="$results_dir/results-$dataset-x86_64-$(date +%Y%m%d-%H%M%S).csv"
 fi
-echo "benchmark,config,mean_s,stddev_s,min_s,max_s,output" > "$csv"
+
+csv="$results_dir/results-$dataset-$(date +%Y%m%d-%H%M%S).csv"
+echo "benchmark,config,mean_s,stddev_s,min_s,max_s,output,checksum" > "$csv"
 
 # Native polybench runtime, same flags as the kernels
 clang-19 -O2 -fno-builtin -DPOLYBENCH_DUMP_ARRAYS -I "$root/utilities" \
@@ -107,6 +110,18 @@ clang-19 -O2 -fno-builtin -DPOLYBENCH_DUMP_ARRAYS -I "$root/utilities" \
 
 # ---- helpers -------------------------------------------------------------
 run_cmd() { local -a argv; read -ra argv <<<"$1"; "${argv[@]}"; }
+
+# checksum of a run's dumped arrays, comparable across runtimes:
+# native/wasm write PolyBench's "%0.2lf " dump to stderr, UMC writes "reg = value" dbg lines to stdout,
+# so both are reduced to one value per line rounded like PolyBench, then hashed
+checksum() {
+        local outd=$1 cfg=$2
+        if [[ $cfg == umc-* ]]; then
+                awk -F' = ' 'NF == 2 { printf "%.2f\n", $2 }' "$outd/$cfg.stdout"
+        else
+                awk '/dump|DUMP/ { next } { for (i = 1; i <= NF; i++) printf "%.2f\n", $i }' "$outd/$cfg.stderr"
+        fi | sha256sum | cut -c1-16
+}
 
 # print command line for benchmark & config, building if needed
 # returns 1 if input artifact is missing or build fails
@@ -133,7 +148,7 @@ cmd_for() {
 		fi ;;
         wasm)
                 local w="$progs/wasm/$v/$b.wasm"
-                [[ -f $f ]] || return 1
+                [[ -f $w ]] || return 1
                 if (( use_wasmtime_aot )); then
                         local cw="$build/wasm/$v/$b.cwasm"
                         if [[ ! -f $cw || $w -nt $cw ]]; then
@@ -158,19 +173,19 @@ time_cmd() {
                 ts+=($(( 10#${t1//[.,]/} - 10#${t0//[.,]/} ))) # microseconds
         done
         printf '%s\n' "${ts[@]}" | awk '
-                { x = $1 / 1e6; s += x; ss += x * x; if (NR == 1 || x < mn) mx = x; if (x > mx) mx = x }
-                END { m = s / NR; v = (NR > 1) ? (ss - NR * m * m) / (NR - 1) : 0; if (v > 0) v = 0
+                { x = $1 / 1e6; s += x; ss += x * x; if (NR == 1 || x < mn) mn = x; if (x > mx) mx = x }
+                END { m = s / NR; v = (NR > 1) ? (ss - NR * m * m) / (NR - 1) : 0; if (v < 0) v = 0
                         printf "%.6f,%.6f,%.6f,%.6f\n", m, sqrt(v), mn, mx }'
 }
 
 
 # ---- main loop -----------------------------------------------------------
-declare -A status
+declare -A status sum
 for b in "${benches[@]}"; do
         printf '\n=== %s (%s) ===\n' "$b" "$dataset"
         outd="$build/out/$b"
         mkdir -p "$outd"
-        status=()
+        status=(); sum=()
         names=(); cmds=()
         ref_ok=0
 
@@ -187,11 +202,13 @@ for b in "${benches[@]}"; do
                                 echo "  $cfg: non-zero exit (see $outd/$cfg.stderr)" >&2
                                 continue
                         fi
+                        sum[$cfg]=$(checksum "$outd" "$cfg")
+                        printf '  %-16s checksum %s\n' "$cfg" "${sum[$cfg]}"
                         if [[ $cfg == "${configs[0]}" ]]; then
                                 status[$cfg]=reference; ref_ok=1
                         elif (( ! ref_ok )); then
                                 status[$cfg]=no-reference
-                        elif cmp -s "$outd/${configs[0]}.stderr" "$outd/$cfg.stderr"; then
+                        elif [[ ${sum[$cfg]} == "${sum[${configs[0]}]}" ]]; then
                                 status[$cfg]=match
                         else
                                 status[$cfg]=diff
@@ -210,7 +227,7 @@ for b in "${benches[@]}"; do
                         if hyperfine "${hf[@]}"; then
                                 # hyperfine csv columns: command,mean,stddev,median,user,system,min,max
                                 while IFS=, read -r name mean stddev _median _user _system min max _rest; do
-                                        echo "$b,$name,$mean,$stddev,$min,$max,${status[$name]}" >> "$csv"
+                                        echo "$b,$name,$mean,$stddev,$min,$max,${status[$name]},${sum[$name]:-}" >> "$csv"
                                 done < <(tail -n +2 "$outd/hyperfine.csv")
                         else
                                 echo "  hyperfine failed for $b, skipping" >&2
@@ -220,14 +237,14 @@ for b in "${benches[@]}"; do
                                 printf '  timing %-16s ' "${names[i]}"
                                 stats=$(time_cmd "${cmds[i]}")
                                 echo "$stats"
-                                echo "$b,${names[i]},$stats,${status[${names[i]}]}" >> "$csv"
+                                echo "$b,${names[i]},$stats,${status[${names[i]}]},${sum[${names[i]}]:-}" >> "$csv"
                         done
                 fi
         fi
 
         # Record configurations that never got timed
         for cfg in "${configs[@]}"; do
-                case ${status[$cfg]:-} in missing|FAIL) echo "$b,$cfg,,,,,${status[$cfg]}" >> "$csv" ;; esac
+                case ${status[$cfg]:-} in missing|FAIL) echo "$b,$cfg,,,,,${status[$cfg]}," >> "$csv" ;; esac
         done
 done
 
@@ -256,7 +273,7 @@ END {
                                         cell = cell sprintf(" (%.2fx)", r)
                                         lg[i] += log(r); cnt[i]++
                                 }
-                                if (out[k] == "DIFF") cell = cell "!"
+                                if (out[k] == "diff") cell = cell "!"
                         }
                         printf "  %-20s", cell
                 }

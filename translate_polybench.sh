@@ -27,7 +27,7 @@ while getopts ":p:d:Wh" opt; do
         case $opt in
                 p) target=$OPTARG ;;
               	d) dataset=$OPTARG ;;
-              	w) build_wasm=0 ;;
+              	W) build_wasm=0 ;;
                 h) usage ;;
                 :) echo "Option -$OPTARG requires an argument" >&2; usage ;;
                 \?) echo "Unknown option -$OPTARG" >&2; usage ;;
