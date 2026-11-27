@@ -116,7 +116,8 @@ impl SafeAddress {
 
 impl UMCOffset for SafeAddress {
     fn offset(&mut self, offset: isize) {
-        self.offset = self.offset.saturating_add_signed(offset);
+        // wrap like the JIT: LLVM GEPs can step before the block start and back (fdtd-2d's hz[i-1]), access checks catch real OOB
+        self.offset = self.offset.wrapping_add_signed(offset);
     }
 }
 
@@ -251,10 +252,11 @@ impl Serializable for SafeAddress {
             return Err(());
         }
         let block_id = u32::read_from(&bytes[0..4])?;
-        let offset = u32::read_from(&bytes[4..8])?;
+        // sign-extend so a spilled pointer that wrapped below the block start (see offset()) survives the round trip
+        let offset = i32::read_from(&bytes[4..8])?;
         Ok(Self {
             block_id: block_id as usize,
-            offset: offset as usize,
+            offset: offset as isize as usize,
         })
     }
 
@@ -321,5 +323,19 @@ mod test {
 
         assert_eq!(-10, mm.load_prim::<i32>(&a1).unwrap());
         assert_eq!(42_000, mm.load_prim::<u64>(&a2).unwrap());
+    }
+
+    // GEP stepping below the block start and back (fdtd-2d hz[i-1]), with a spill in between
+    #[test]
+    fn negative_offset_round_trips() {
+        use super::SafeAddress;
+        use crate::vm::memory::Serializable;
+        let mut a = SafeAddress::from_parts(3, 0);
+        a.offset(-1920);
+        let mut bytes = [0u8; SafeAddress::SIZE_BYTES as usize];
+        a.write_to(&mut bytes).unwrap();
+        let mut b = SafeAddress::read_from(&bytes).unwrap();
+        b.offset(1920 * 2);
+        assert_eq!(b.byte_offset(), 1920);
     }
 }
