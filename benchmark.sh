@@ -14,12 +14,14 @@ build=./bench-build
 results_dir=./bench-results
 
 umc_run="${UMC_RUN:-./target/release/umc-vm}"
+umc_arm_run="${UMC_ARM_RUN:-qemu-aarch64 -L /usr/aarch64-linux-gnu ./target/aarch64-unknown-linux-gnu/release/umc-vm}"
 wasm_run="${WASM_RUN:-wasmtime run}"
 runs=10
 warmup=2
 cpu=""
 precompile=0
 check=1
+arm=0
 
 usage() {
         cat >&2 <<EOF
@@ -32,11 +34,12 @@ Usage: $0 [options] [benchmark ...]
   -c CPU      pin every run to one CPU with taskset
   -J          AOT-precompile wasm (and not include wasmtime's compile time in the timing)
   -C          skip the output-equivalence check
+  -a          compile use compiled AArch64 target and run with QEMU
 EOF
         exit 1
 }
 
-while getopts ":r:w:u:W:c:JCh" opt; do
+while getopts ":r:w:u:W:c:JCah" opt; do
         case $opt in
                 r) runs=$OPTARG ;;
                 w) warmup=$OPTARG ;;
@@ -45,6 +48,7 @@ while getopts ":r:w:u:W:c:JCh" opt; do
                 c) cpu=$OPTARG ;;
                 J) precompile=1 ;;
                 C) check=0 ;;
+		a) arm=1 ;;
                 h) usage;;
                 :) echo "Option -$OPTARG requires an argument" >&2; usage ;;
                 \?) echo "Unknown option -$OPTARG" >&2; usage ;;
@@ -90,7 +94,11 @@ dataset=$(cat "$ir/DATASET" 2>/dev/null || echo UNKNOWN)
 configs=(native-phis native-no-phis umc-phis umc-no-phis wasm-phis wasm-no-phis) # first = baseline
 
 mkdir -p "$build"/native/{phis,no-phis} "$build"/wasm/{phis,no-phis} "$build/out" "$results_dir"
-csv="$results_dir/results-$dataset-$(date +%Y%m%d-%H%M%S).csv"
+if (( arm )); then
+	csv="$results_dir/results-$dataset-AArch64-$(date +%Y%m%d-%H%M%S).csv"
+else
+	csv="$results_dir/results-$dataset-x86_64-$(date +%Y%m%d-%H%M%S).csv"
+fi
 echo "benchmark,config,mean_s,stddev_s,min_s,max_s,output,checksum" > "$csv"
 
 # Native polybench runtime, same flags as the kernels
@@ -130,7 +138,11 @@ cmd_for() {
         umc)
                 local f="$progs/$v/$b.umc"
                 [[ -f $f ]] || return 1
-                echo "$pin$umc_run $f" ;;
+		if (( arm )); then
+			echo "$pin$umc_arm_run $f"
+		else
+			echo "$pin$umc_run $f"
+		fi ;;
         wasm)
                 local w="$progs/wasm/$v/$b.wasm"
                 [[ -f $w ]] || return 1
