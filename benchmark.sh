@@ -116,7 +116,15 @@ checksum() {
         if [[ $cfg == umc-* ]]; then
                 awk -F' = ' 'NF == 2 { printf "%.2f\n", $2 }' "$outd/$cfg.stdout"
         else
-                awk '/dump|DUMP/ { next } { for (i = 1; i <= NF; i++) printf "%.2f\n", $i }' "$outd/$cfg.stderr"
+                # "begin dump: %s" has no newline, so kernels that print a value before their "\n" (trisolv) glue it to the name ("x0.00")
+                # buffer each dump and strip the exact name, which the "end   dump: NAME" line gives
+                awk '
+                        /DUMP_ARRAYS/ { next }
+                        /^begin dump: / { sub(/^begin dump: /, ""); n = 0; buf[++n] = $0; next }
+                        /^end   dump: / { sub("^" $3, "", buf[1])
+                                for (k = 1; k <= n; k++) { m = split(buf[k], f, " "); for (i = 1; i <= m; i++) printf "%.2f\n", f[i] }
+                                n = 0; next }
+                        { buf[++n] = $0 }' "$outd/$cfg.stderr"
         fi | sha256sum | cut -c1-16
 }
 
