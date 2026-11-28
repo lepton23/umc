@@ -16,5 +16,5 @@ int-enum = "1.2.0"
 
 # For consumption of LLVM IR and conversion into Rust data types.
 # Linux only: llvm-sys needs a full LLVM 19 dev install (apt: llvm-19-dev libpolly-19-dev, LLVM_SYS_191_PREFIX=/usr/lib/llvm-19)
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(all(target_os = "linux", not(any(target_arch = "arm", target_arch = "aarch64"))))'.dependencies]
 llvm-ir = { version = "0.11.3", features = ["llvm-19"] }

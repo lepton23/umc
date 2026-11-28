@@ -1,4 +1,4 @@
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(any(target_arch = "arm", target_arch = "aarch64"))))]
 fn main() {
     use clap::Parser;
     use std::path::PathBuf;
@@ -33,7 +33,7 @@ fn main() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", not(any(target_arch = "arm", target_arch = "aarch64")))))]
 fn main() {
     eprintln!("umc-llvm depends on llvm-ir, which is only built on Linux");
     std::process::exit(1);
